@@ -22,7 +22,7 @@ class BinaryReader:
 
     def tell(self) -> int:
         """Возвращает текущую позицию курсора (в байтах от начала)."""
-        return self.offset
+        return self._offset
 
     def remaining(self):
         """Сколько байт ещё не прочитано."""
@@ -35,15 +35,14 @@ class BinaryReader:
         Raises:
             ValueError: если байт недостаточно.
         """
-        end = self._offset + n
-        if end > len(self._data):
+        if self._offset + n > len(self._data):
             raise ValueError(
-                f"Неожиданный конец файла: запрошено {n} Б "
-                f"по смещению 0x{self._offset:04x}, "
-                f"доступно {self.remaining()} Б"
+                f"Неожиданный конец файла: запрошено {n} байт "
+                f"по смещению 0x{self._offset:04x}, доступно {len(self._data) - self._offset}"
             )
-        chunk = self._data[self._offset : end]
-        self._offset = end
+        chunk = self._data[self._offset : self._offset + n]
+        self._offset += n
+
         return chunk
 
     def read_u8(self) -> int:
