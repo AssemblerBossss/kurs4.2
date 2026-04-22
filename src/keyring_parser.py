@@ -1,6 +1,14 @@
 from typing import Any, Optional
 from src.binary_reader import BinaryReader
-
+from src.keyring_models import (
+    MAGIC, MAGIC_SIZE,
+    NULL_STRING,
+    KeyringHeader,
+    HashedAttribute,
+    HashedItem,
+    KeyringFile,
+    FieldOffset,
+)
 
 class KeyringParser:
     """Парсер файла .keyring — извлекает структурированные данные без вывода."""
