@@ -1,4 +1,3 @@
-# main.py — Точка входа, объединяет парсер и визуализатор
 import sys
 from keyring_parser import KeyringParser
 from keyring_visualizer import KeyringVisualizer

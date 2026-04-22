@@ -239,7 +239,7 @@ class KeyringVisualizer:
             COLOR_META,
         )
 
-    def _get_metadata_offsets(self) -> Dict[str, int]:
+    def _get_metadata_offsets(self) -> dict[str, int]:
         """Вычисляет смещения для полей метаданных."""
         # После сигнатуры (16) + версии (4) = 20 байт
         base = 20
@@ -254,10 +254,206 @@ class KeyringVisualizer:
             "timeout_start": base + 4 + name_len + 20,
         }
 
+    def dump_kdf_params(self) -> None:
+        """Визуализирует блок параметров KDF (данные из parser.kdf_*)."""
+        self._print_block_header("БЛОК 4: ПАРАМЕТРЫ KDF", BOLD + MAGENTA)
+
+        if self.parser.kdf_iterations is not None:
+            self._dump_field(
+                self.parser.offsets["kdf_iter_start"],
+                self.parser.offsets["kdf_iter_end"],
+                "HASH_ITERATIONS",
+                str(self.parser.kdf_iterations),
+                COLOR_KDF,
+            )
+
+        if self.parser.kdf_salt:
+            self._dump_field(
+                self.parser.offsets["kdf_salt_start"],
+                self.parser.offsets["kdf_salt_end"],
+                "SALT (8 байт)",
+                self.parser.kdf_salt.hex(),
+                COLOR_KDF,
+            )
+
+        if self.parser.kdf_reserved:
+            self._dump_field(
+                self.parser.offsets["kdf_reserved_start"],
+                self.parser.offsets["kdf_reserved_end"],
+                "RESERVED[4] (должны быть 0x00)",
+                "",
+                COLOR_META,
+            )
+
+    def dump_hashed_items(self) -> None:
+        """Визуализирует блок hashed items (данные из parser.hashed_items)."""
+        self._print_block_header(
+            "БЛОК 5: HASHED ITEMS (незашифрованные атрибуты)", BOLD + BLUE
+        )
+
+        # NUM_ITEMS
+        self._dump_field(
+            self.parser.offsets["num_items_start"],
+            self.parser.offsets["num_items_end"],
+            "NUM_ITEMS",
+            str(self.parser.num_items),
+            COLOR_HASH,
+        )
+
+        # Перебираем элементы из парсера
+        for item in self.parser.hashed_items:
+            print()  # Разделитель между элементами
+
+            # ITEM ID
+            self._dump_field(
+                item["offsets"]["id_start"],
+                item["offsets"]["id_end"],
+                f"  ITEM[{item['idx']}].ID",
+                str(item["id"]),
+                COLOR_HASH,
+            )
+
+            # ITEM TYPE
+            self._dump_field(
+                item["offsets"]["type_start"],
+                item["offsets"]["type_end"],
+                f"  ITEM[{item['idx']}].TYPE",
+                str(item["type"]),
+                COLOR_HASH,
+            )
+
+            # NUM_ATTRS
+            self._dump_field(
+                item["offsets"]["num_attrs_start"],
+                item["offsets"]["num_attrs_end"],
+                f"  ITEM[{item['idx']}].NUM_ATTRS",
+                str(item["num_attrs"]),
+                COLOR_HASH,
+            )
+
+            # Атрибуты
+            for attr in item["attributes"]:
+                # ATTR NAME
+                self._dump_field(
+                    attr["offsets"]["name_start"],
+                    attr["offsets"]["name_end"],
+                    f"    ATTR[{attr['idx']}].NAME",
+                    repr(attr["name"]),
+                    COLOR_HASH,
+                )
+
+                # ATTR TYPE
+                type_desc = "0=str, 1=int"
+                self._dump_field(
+                    attr["offsets"]["type_start"],
+                    attr["offsets"]["type_end"],
+                    f"    ATTR[{attr['idx']}].TYPE ({type_desc})",
+                    str(attr["type"]),
+                    COLOR_HASH,
+                )
+
+                # ATTR HASH
+                if attr["type"] == 0:  # string
+                    self._dump_field(
+                        attr["offsets"]["hash_start"],
+                        attr["offsets"]["hash_end"],
+                        f"    ATTR[{attr['idx']}].STR_HASH ({attr['hash_len']} B)",
+                        repr(attr["hash_str"]),
+                        COLOR_HASH,
+                    )
+                else:  # int
+                    self._dump_field(
+                        attr["offsets"]["hash_start"],
+                        attr["offsets"]["hash_end"],
+                        f"    ATTR[{attr['idx']}].INT_HASH",
+                        f"0x{attr['hash_int']:08x}",
+                        COLOR_HASH,
+                    )
+
+    def dump_encrypted_block(self) -> None:
+        """Визуализирует зашифрованный блок (данные из parser.encrypted_*)."""
+        self._print_block_header("БЛОК 6: ЗАШИФРОВАННЫЙ БЛОК", BOLD + RED)
+
+        # NUM_ENCRYPTED
+        self._dump_field(
+            self.parser.offsets["encrypted_size_start"],
+            self.parser.offsets["encrypted_size_end"],
+            "NUM_ENCRYPTED (байт)",
+            str(self.parser.encrypted_size),
+            COLOR_CRYPTO,
+        )
+
+        # Зашифрованные данные
+        if self.parser.encrypted_size > 0:
+            # Первые 16 байт (MD5 верификации)
+            self._dump_field(
+                self.parser.offsets["encrypted_data_start"],
+                self.parser.offsets["encrypted_data_start"]
+                + min(16, self.parser.encrypted_size),
+                "ENCRYPTED[0:16] (после расш. = MD5 верификации)",
+                "",
+                COLOR_CRYPTO,
+            )
+
+            # Остальные байты
+            if self.parser.encrypted_size > 16:
+                self._dump_field(
+                    self.parser.offsets["encrypted_data_start"] + 16,
+                    self.parser.offsets["encrypted_data_start"]
+                    + self.parser.encrypted_size,
+                    f"ENCRYPTED[16:{self.parser.encrypted_size}] (зашифрованные записи)",
+                    "",
+                    COLOR_CRYPTO,
+                )
+
+    def _print_field_map(self) -> None:
+        """Выводит карту полей файла (статическая информация)."""
+        print()
+        print(self._colored("═" * 90, BOLD))
+        print(self._colored("  КАРТА ПОЛЕЙ ФАЙЛА", BOLD))
+        print(self._colored("═" * 90, BOLD))
+        print()
+        print(f"  {'ПОЛЕ':<40} {'СМЕЩЕНИЕ':<12} {'РАЗМЕР':<10} {'ОПИСАНИЕ'}")
+        print("  " + "─" * 86)
+
+        fields = [
+            ("MAGIC", "0x0000", "16 B", "Сигнатура: GnomeKeyring\\n\\r\\x00\\n"),
+            ("VERSION_MAJOR", "0x0010", "1 B", "Старший байт версии формата"),
+            ("VERSION_MINOR", "0x0011", "1 B", "Младший байт версии формата"),
+            ("CRYPTO_TYPE", "0x0012", "1 B", "Тип шифрования (0 = AES-128-CBC)"),
+            ("HASH_TYPE", "0x0013", "1 B", "Тип KDF (0 = SHA-256 итерационный)"),
+            ("NAME", "0x0014", "var", "guint32 длина + байты имени"),
+            ("CTIME", "var", "8 B", "Время создания (2 × guint32 big-endian)"),
+            ("MTIME", "var", "8 B", "Время изменения (2 × guint32 big-endian)"),
+            ("FLAGS", "var", "4 B", "Флаги (бит 0 = lock_on_idle)"),
+            ("LOCK_TIMEOUT", "var", "4 B", "Таймаут блокировки в секундах"),
+            ("HASH_ITERATIONS", "var", "4 B", "Число итераций SHA-256 для KDF"),
+            ("SALT", "var", "8 B", "Соль для KDF (случайные байты)"),
+            ("RESERVED[4]", "var", "16 B", "Зарезервировано, должно быть 0"),
+            ("NUM_ITEMS", "var", "4 B", "Число записей в hashed section"),
+            ("HASHED_ITEMS[]", "var", "var", "Незашифрованные хеши атрибутов"),
+            ("  .item_id", "  -", "4 B", "Идентификатор записи"),
+            ("  .item_type", "  -", "4 B", "Тип записи"),
+            ("  .num_attributes", "  -", "4 B", "Число атрибутов"),
+            ("  .attr[n].name", "  -", "var", "Имя атрибута (guint32 + bytes)"),
+            ("  .attr[n].type", "  -", "4 B", "Тип атрибута (0=str, 1=int)"),
+            ("  .attr[n].hash", "  -", "var", "Хеш значения атрибута (str или int)"),
+            ("NUM_ENCRYPTED", "var", "4 B", "Размер зашифрованного блока в байтах"),
+            ("ENCRYPTED_DATA", "var", "var", "AES-128-CBC(PKCS7(MD5||plaintext))"),
+            ("  [0:16]", "  -", "16 B", "MD5(plaintext) — хеш верификации"),
+            ("  [16:n]", "  -", "var", "Зашифрованные записи"),
+        ]
+        for name, off, sz, desc in fields:
+            print(f"  {name:<40} {off:<12} {sz:<10} {desc}")
+        print()
+
     def dump_all(self) -> None:
         """Выводит полный аннотированный дамп."""
         self._print_main_header()
         self.dump_magic()
         self.dump_version_and_flags()
         self.dump_metadata()
-        # ... остальные блоки
+        self.dump_kdf_params()
+        self.dump_hashed_items()
+        self.dump_encrypted_block()
+        self._print_field_map()

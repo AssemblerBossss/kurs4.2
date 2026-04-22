@@ -1,0 +1,8 @@
+black==26.3.1
+click==8.3.2
+mypy_extensions==1.1.0
+packaging==26.1
+pathspec==1.0.4
+platformdirs==4.9.6
+pycryptodome==3.23.0
+pytokens==0.4.1
