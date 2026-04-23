@@ -31,7 +31,8 @@ class KeyringParser:
         self._offsets[name] = FieldOffset(start=start, end=end)
 
     def _save_offset_pair(self, name: str, start: int) -> None:
-        self._save_offset_pair(name=name, start=start)
+        """Сохраняет смещение с автоматическим определением конца (текущая позиция)."""
+        self._save_offset(name, start, self.reader.tell())
 
     def _parse_magic(self) -> bytes:
         """Извлекает сигнатуру (16 байт)."""

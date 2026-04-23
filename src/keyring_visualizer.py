@@ -1,6 +1,15 @@
 # keyring_visualizer.py — Отвечает только за вывод и аннотации
-from typing import Dict, Any, Tuple, Optional
 from datetime import datetime
+
+from src.keyring_models import (
+    KeyringFile,
+    HashedItem,
+    HashedAttribute,
+    FieldOffset,
+    CRYPTO_NAMES,
+    HASH_NAMES,
+    KeyringHeader,
+)
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -19,27 +28,23 @@ COLOR_KDF = MAGENTA
 COLOR_HASH = BLUE
 COLOR_CRYPTO = RED
 
-CRYPTO_NAMES = {
-    0: "AES-128-CBC",
-    1: "NONE (незашифрован)",
-}
-
-HASH_NAMES = {
-    0: "SHA-256 (итерационный KDF)",
-    1: "NONE",
-}
-
 
 class KeyringVisualizer:
     """Визуализатор .keyring — выводит аннотированный hex-дамп."""
 
-    def __init__(self, parser):
+    def __init__(self, keyring: KeyringFile):
         """
         Args:
-            parser: Экземпляр KeyringParser с уже извлечёнными данными
+            keyring: Экземпляр KeyringFile с уже извлечёнными данными
         """
-        self.parser = parser
-        self.data = parser.data
+
+        self.keyring = keyring
+        self.data = keyring.data if hasattr(keyring, "data") else None
+
+        # Если у keyring нет поля data, читаем файл заново
+        if self.data is None:
+            with open(keyring.filepath, "rb") as f:
+                self.data = f.read()
 
     @staticmethod
     def _colored(text: str, color: str) -> str:
@@ -77,13 +82,25 @@ class KeyringVisualizer:
             print(self._hex_row(start + i, chunk, ann, color))
             first = False
 
+    def _dump_field_from_offset(
+        self, offset: FieldOffset, name: str, value_str: str = "", color: str = WHITE
+    ) -> None:
+        """Выводит hex-дамп, используя объект FieldOffset."""
+        self._dump_field(
+            start=offset.start,
+            end=offset.end,
+            name=name,
+            value_str=value_str,
+            color=color,
+        )
+
     def _print_main_header(self) -> None:
         """Выводит главный заголовок."""
         print()
         print(self._colored("═" * 90, BOLD))
         print(
             self._colored(
-                f"  АННОТИРОВАННЫЙ HEX-ДАМП: {self.parser.filepath}  ({len(self.data)} байт)",
+                f"  АННОТИРОВАННЫЙ HEX-ДАМП: {self.keyring.filepath}  ({self.keyring.file_size} байт)",
                 BOLD,
             )
         )
@@ -103,308 +120,291 @@ class KeyringVisualizer:
         """Визуализирует блок сигнатуры."""
         self._print_block_header("БЛОК 1: СИГНАТУРА ФАЙЛА", color=GREEN)
 
-        # Данные уже извлечены парсером
-        magic = self.parser.magic
-        magic_start = 0  # Сигнатура всегда в начале
-
+        magic = self.keyring.header.magic
         magic_repr = repr(magic)[2:-1]
+
         self._dump_field(
-            magic_start, magic_start + 16, "MAGIC", magic_repr, COLOR_MAGIC
+            start=0, end=16, name="MAGIC", value_str=magic_repr, color=COLOR_MAGIC
         )
-        print("  " + "─" * 86)
 
     def dump_version_and_flags(self) -> None:
         """Визуализирует блок флагов алгоритмов."""
         self._print_block_header("БЛОК 2: ФЛАГИ АЛГОРИТМОВ", CYAN)
 
-        # Используем извлечённые данные
-        offsets = self._get_version_offsets()
+        header: KeyringHeader = self.keyring.header
+        offsets = header.offsets
 
         # VERSION_MAJOR
-        self._dump_field(
-            offsets["major_start"],
-            offsets["major_start"] + 1,
-            "VERSION_MAJOR",
-            str(self.parser.version_major),
-            COLOR_HEADER,
+        self._dump_field_from_offset(
+            offset=offsets["version_major"],
+            name="VERSION_MAJOR",
+            value_str=str(header.version_major),
+            color=COLOR_HEADER,
         )
 
         # VERSION_MINOR
-        self._dump_field(
-            offsets["minor_start"],
-            offsets["minor_start"] + 1,
-            "VERSION_MINOR",
-            str(self.parser.version_minor),
-            COLOR_HEADER,
+        self._dump_field_from_offset(
+            offset=offsets["version_minor"],
+            name="VERSION_MINOR",
+            value_str=str(header.version_minor),
+            color=COLOR_HEADER,
         )
 
         # CRYPTO_TYPE
         crypto_name = CRYPTO_NAMES.get(
-            self.parser.crypto_type, f"UNKNOWN (0x{self.parser.crypto_type:02x})"
+            header.crypto_type, f"UNKNOWN (0x{header.crypto_type:02x})"
         )
-        self._dump_field(
-            offsets["crypto_start"],
-            offsets["crypto_start"] + 1,
-            "CRYPTO_TYPE",
-            f"{self.parser.crypto_type} = {crypto_name}",
-            COLOR_HEADER,
+
+        self._dump_field_from_offset(
+            offset=offsets["crypto_type"],
+            name="CRYPTO_TYPE",
+            value_str=f"{header.crypto_type} = {crypto_name}",
+            color=COLOR_HEADER,
         )
 
         # HASH_TYPE
         hash_name = HASH_NAMES.get(
-            self.parser.hash_type, f"UNKNOWN (0x{self.parser.hash_type:02x})"
-        )
-        self._dump_field(
-            offsets["hash_start"],
-            offsets["hash_start"] + 1,
-            "HASH_TYPE",
-            f"{self.parser.hash_type} = {hash_name}",
-            COLOR_HEADER,
+            header.hash_type, f"UNKNOWN (0x{header.hash_type:02x})"
         )
 
-    def _get_version_offsets(self) -> Dict[str, int]:
-        """Вычисляет смещения для полей версии (16 байт сигнатуры)."""
-        base = 16  # После сигнатуры
-        return {
-            "major_start": base,
-            "minor_start": base + 1,
-            "crypto_start": base + 2,
-            "hash_start": base + 3,
-        }
+        self._dump_field_from_offset(
+            offset=offsets["hash_type"],
+            name="HASH_TYPE",
+            value_str=f"{header.hash_type} = {hash_name}",
+            color=COLOR_HEADER,
+        )
+
+    # ─── Блок 3: Метаданные ──────────────────────────────────────────────────
 
     def dump_metadata(self) -> None:
         """Визуализирует блок метаданных."""
         self._print_block_header("БЛОК 3: МЕТАДАННЫЕ ХРАНИЛИЩА", BOLD + YELLOW)
 
-        offsets = self._get_metadata_offsets()
+        header = self.keyring.header
+        offsets = header.offsets
 
         # NAME_LENGTH
-        name_len = len(self.parser.name.encode("utf-8"))
-        self._dump_field(
-            offsets["name_len_start"],
-            offsets["name_len_start"] + 4,
-            "NAME_LENGTH",
-            str(name_len),
-            COLOR_META,
+        name_len = len(header.name.encode("utf-8"))
+        self._dump_field_from_offset(
+            offset=offsets["name_len"],
+            name="NAME_LENGTH",
+            value_str=str(name_len),
+            color=COLOR_META,
         )
 
         # NAME
-        self._dump_field(
-            offsets["name_start"],
-            offsets["name_start"] + name_len,
-            "NAME",
-            self.parser.name,
-            COLOR_META,
+        self._dump_field_from_offset(
+            offset=offsets["name"],
+            name="NAME",
+            value_str=header.name,
+            color=COLOR_META,
         )
 
         # CTIME
-        ctime_str = datetime.fromtimestamp(self.parser.ctime).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-        self._dump_field(
-            offsets["ctime_start"],
-            offsets["ctime_start"] + 8,
-            "CTIME (time_t: 2×uint32)",
-            ctime_str,
-            COLOR_META,
+        self._dump_field_from_offset(
+            offset=offsets["ctime"],
+            name="CTIME (time_t: 2×uint32)",
+            value_str=header.ctime_str,
+            color=COLOR_META,
         )
 
         # MTIME
-        mtime_str = datetime.fromtimestamp(self.parser.mtime).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-        self._dump_field(
-            offsets["mtime_start"],
-            offsets["mtime_start"] + 8,
-            "MTIME (time_t: 2×uint32)",
-            mtime_str,
-            COLOR_META,
+        self._dump_field_from_offset(
+            offset=offsets["mtime"],
+            name="MTIME (time_t: 2×uint32)",
+            value_str=header.mtime_str,
+            color=COLOR_META,
         )
 
         # FLAGS
-        self._dump_field(
-            offsets["flags_start"],
-            offsets["flags_start"] + 4,
-            "FLAGS",
-            f"0x{self.parser.flags:08x}",
-            COLOR_META,
+        self._dump_field_from_offset(
+            offset=offsets["flags"],
+            name="FLAGS",
+            value_str=f"0x{header.flags:08x}",
+            color=COLOR_META,
         )
 
         # LOCK_TIMEOUT
-        self._dump_field(
-            offsets["timeout_start"],
-            offsets["timeout_start"] + 4,
-            "LOCK_TIMEOUT (сек)",
-            str(self.parser.lock_timeout),
-            COLOR_META,
+        self._dump_field_from_offset(
+            offset=offsets["lock_timeout"],
+            name="LOCK_TIMEOUT (сек)",
+            value_str=str(header.lock_timeout),
+            color=COLOR_META,
         )
 
-    def _get_metadata_offsets(self) -> dict[str, int]:
-        """Вычисляет смещения для полей метаданных."""
-        # После сигнатуры (16) + версии (4) = 20 байт
-        base = 20
-        name_len = len(self.parser.name.encode("utf-8"))
-
-        return {
-            "name_len_start": base,
-            "name_start": base + 4,
-            "ctime_start": base + 4 + name_len,
-            "mtime_start": base + 4 + name_len + 8,
-            "flags_start": base + 4 + name_len + 16,
-            "timeout_start": base + 4 + name_len + 20,
-        }
-
     def dump_kdf_params(self) -> None:
-        """Визуализирует блок параметров KDF (данные из parser.kdf_*)."""
+        """Визуализирует блок параметров KDF."""
         self._print_block_header("БЛОК 4: ПАРАМЕТРЫ KDF", BOLD + MAGENTA)
 
-        if self.parser.kdf_iterations is not None:
-            self._dump_field(
-                self.parser.offsets["kdf_iter_start"],
-                self.parser.offsets["kdf_iter_end"],
-                "HASH_ITERATIONS",
-                str(self.parser.kdf_iterations),
-                COLOR_KDF,
-            )
+        header = self.keyring.header
+        offsets = header.offsets
 
-        if self.parser.kdf_salt:
-            self._dump_field(
-                self.parser.offsets["kdf_salt_start"],
-                self.parser.offsets["kdf_salt_end"],
-                "SALT (8 байт)",
-                self.parser.kdf_salt.hex(),
-                COLOR_KDF,
-            )
+        # HASH_ITERATIONS
+        self._dump_field_from_offset(
+            offset=offsets["kdf_iterations"],
+            name="HASH_ITERATIONS",
+            value_str=str(header.kdf_iterations),
+            color=COLOR_KDF,
+        )
 
-        if self.parser.kdf_reserved:
-            self._dump_field(
-                self.parser.offsets["kdf_reserved_start"],
-                self.parser.offsets["kdf_reserved_end"],
-                "RESERVED[4] (должны быть 0x00)",
-                "",
-                COLOR_META,
-            )
+        # SALT
+        self._dump_field_from_offset(
+            offset=offsets["kdf_salt"],
+            name="SALT (8 байт)",
+            value_str=header.kdf_salt.hex(),
+            color=COLOR_KDF,
+        )
+
+        # RESERVED[4]
+        self._dump_field_from_offset(
+            offset=offsets["kdf_reserved"],
+            name="RESERVED[4] (должны быть 0x00)",
+            value_str="",
+            color=COLOR_META,
+        )
+
+        # ─── Блок 5: Hashed Items ────────────────────────────────────────────────
 
     def dump_hashed_items(self) -> None:
-        """Визуализирует блок hashed items (данные из parser.hashed_items)."""
+        """Визуализирует блок hashed items (незашифрованные атрибуты)."""
         self._print_block_header(
             "БЛОК 5: HASHED ITEMS (незашифрованные атрибуты)", BOLD + BLUE
         )
 
+        header = self.keyring.header
+        offsets = header.offsets
+
         # NUM_ITEMS
-        self._dump_field(
-            self.parser.offsets["num_items_start"],
-            self.parser.offsets["num_items_end"],
+        self._dump_field_from_offset(
+            offsets["num_items"],
             "NUM_ITEMS",
-            str(self.parser.num_items),
+            str(len(self.keyring.hashed_items)),
             COLOR_HASH,
         )
 
-        # Перебираем элементы из парсера
-        for item in self.parser.hashed_items:
+        # Перебираем элементы
+        for item in self.keyring.hashed_items:
             print()  # Разделитель между элементами
 
             # ITEM ID
-            self._dump_field(
-                item["offsets"]["id_start"],
-                item["offsets"]["id_end"],
-                f"  ITEM[{item['idx']}].ID",
-                str(item["id"]),
-                COLOR_HASH,
+            self._dump_field_from_offset(
+                offset=item.offsets["id"],
+                name=f"  ITEM[{item.idx}].ID",
+                value_str=str(item.item_id),
+                color=COLOR_HASH,
             )
 
             # ITEM TYPE
-            self._dump_field(
-                item["offsets"]["type_start"],
-                item["offsets"]["type_end"],
-                f"  ITEM[{item['idx']}].TYPE",
-                str(item["type"]),
-                COLOR_HASH,
+            self._dump_field_from_offset(
+                offset=item.offsets["type"],
+                name=f"  ITEM[{item.idx}].TYPE",
+                value_str=str(item.item_type),
+                color=COLOR_HASH,
             )
 
             # NUM_ATTRS
-            self._dump_field(
-                item["offsets"]["num_attrs_start"],
-                item["offsets"]["num_attrs_end"],
-                f"  ITEM[{item['idx']}].NUM_ATTRS",
-                str(item["num_attrs"]),
-                COLOR_HASH,
+            self._dump_field_from_offset(
+                offset=item.offsets["num_attrs"],
+                name=f"  ITEM[{item.idx}].NUM_ATTRS",
+                value_str=str(len(item.attributes)),
+                color=COLOR_HASH,
             )
 
             # Атрибуты
-            for attr in item["attributes"]:
+            for attr in item.attributes:
                 # ATTR NAME
-                self._dump_field(
-                    attr["offsets"]["name_start"],
-                    attr["offsets"]["name_end"],
-                    f"    ATTR[{attr['idx']}].NAME",
-                    repr(attr["name"]),
-                    COLOR_HASH,
+                self._dump_field_from_offset(
+                    offset=attr.offsets["name"],
+                    name=f"    ATTR[{attr.name}].NAME",
+                    value_str=repr(attr.name),
+                    color=COLOR_HASH,
                 )
 
                 # ATTR TYPE
                 type_desc = "0=str, 1=int"
-                self._dump_field(
-                    attr["offsets"]["type_start"],
-                    attr["offsets"]["type_end"],
-                    f"    ATTR[{attr['idx']}].TYPE ({type_desc})",
-                    str(attr["type"]),
-                    COLOR_HASH,
+                self._dump_field_from_offset(
+                    offset=attr.offsets["type"],
+                    name=f"    ATTR[{attr.name}].TYPE ({type_desc})",
+                    value_str=str(attr.type_id),
+                    color=COLOR_HASH,
                 )
 
                 # ATTR HASH
-                if attr["type"] == 0:  # string
-                    self._dump_field(
-                        attr["offsets"]["hash_start"],
-                        attr["offsets"]["hash_end"],
-                        f"    ATTR[{attr['idx']}].STR_HASH ({attr['hash_len']} B)",
-                        repr(attr["hash_str"]),
-                        COLOR_HASH,
-                    )
+                if attr.type_id == 0:  # string
+                    # Для строкового хеша нужно найти смещение хеша
+                    # Оно хранится после длины, поэтому используем hash_start/end
+                    if "hash_len" in attr.offsets:
+                        # hash_len — это смещение поля длины
+                        hash_len_offset = attr.offsets["hash_len"]
+                        # Сам хеш начинается после длины
+                        hash_start = hash_len_offset.end
+                        hash_end = (
+                            self.data.find(b"\x00", hash_start) or hash_start + 32
+                        )
+                        self._dump_field(
+                            start=hash_start,
+                            end=hash_end,
+                            name=f"    ATTR[{attr.name}].STR_HASH ({attr.hash_str and len(attr.hash_str) or 0} B)",
+                            value_str=repr(attr.hash_str),
+                            color=COLOR_HASH,
+                        )
+                    else:
+                        self._dump_field(
+                            start=attr.offsets["hash"].start,
+                            end=attr.offsets["hash"].end,
+                            name=f"    ATTR[{attr.name}].STR_HASH",
+                            value_str=repr(attr.hash_str),
+                            color=COLOR_HASH,
+                        )
                 else:  # int
-                    self._dump_field(
-                        attr["offsets"]["hash_start"],
-                        attr["offsets"]["hash_end"],
-                        f"    ATTR[{attr['idx']}].INT_HASH",
-                        f"0x{attr['hash_int']:08x}",
-                        COLOR_HASH,
+                    self._dump_field_from_offset(
+                        offset=attr.offsets["hash"],
+                        name=f"    ATTR[{attr.name}].INT_HASH",
+                        value_str=f"0x{attr.hash_int:08x}" if attr.hash_int else "",
+                        color=COLOR_HASH,
                     )
+
+    # ─── Блок 6: Зашифрованный блок ──────────────────────────────────────────
 
     def dump_encrypted_block(self) -> None:
-        """Визуализирует зашифрованный блок (данные из parser.encrypted_*)."""
+        """Визуализирует зашифрованный блок."""
         self._print_block_header("БЛОК 6: ЗАШИФРОВАННЫЙ БЛОК", BOLD + RED)
 
+        header = self.keyring.header
+        offsets = header.offsets
+
         # NUM_ENCRYPTED
-        self._dump_field(
-            self.parser.offsets["encrypted_size_start"],
-            self.parser.offsets["encrypted_size_end"],
-            "NUM_ENCRYPTED (байт)",
-            str(self.parser.encrypted_size),
-            COLOR_CRYPTO,
+        self._dump_field_from_offset(
+            offset=offsets["encrypted_size"],
+            name="NUM_ENCRYPTED (байт)",
+            value_str=str(self.keyring.encrypted_size),
+            color=COLOR_CRYPTO,
         )
 
         # Зашифрованные данные
-        if self.parser.encrypted_size > 0:
+        if self.keyring.encrypted_size > 0:
+            enc_offset = offsets["encrypted_data"]
+
             # Первые 16 байт (MD5 верификации)
             self._dump_field(
-                self.parser.offsets["encrypted_data_start"],
-                self.parser.offsets["encrypted_data_start"]
-                + min(16, self.parser.encrypted_size),
-                "ENCRYPTED[0:16] (после расш. = MD5 верификации)",
-                "",
-                COLOR_CRYPTO,
+                start=enc_offset.start,
+                end=enc_offset.start + min(16, self.keyring.encrypted_size),
+                name="ENCRYPTED[0:16] (после расш. = MD5 верификации)",
+                value_str="",
+                color=COLOR_CRYPTO,
             )
 
             # Остальные байты
-            if self.parser.encrypted_size > 16:
+            if self.keyring.encrypted_size > 16:
                 self._dump_field(
-                    self.parser.offsets["encrypted_data_start"] + 16,
-                    self.parser.offsets["encrypted_data_start"]
-                    + self.parser.encrypted_size,
-                    f"ENCRYPTED[16:{self.parser.encrypted_size}] (зашифрованные записи)",
-                    "",
-                    COLOR_CRYPTO,
+                    start=enc_offset.start + 16,
+                    end=enc_offset.start + self.keyring.encrypted_size,
+                    name=f"ENCRYPTED[16:{self.keyring.encrypted_size}] (зашифрованные записи)",
+                    value_str="",
+                    color=COLOR_CRYPTO,
                 )
+
+    # ─── Карта полей (статическая) ───────────────────────────────────────────
 
     def _print_field_map(self) -> None:
         """Выводит карту полей файла (статическая информация)."""
