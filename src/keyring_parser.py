@@ -162,28 +162,45 @@ class KeyringParser:
             attr_offsets["type"] = FieldOffset(type_start, self.reader.tell())
 
             # ATTR HASH
-            hash_start = self.reader.tell()
-            hash_str = None
-            hash_int = None
-
             if attr_type == 0:  # string hash
+                # Смещение поля длины хеша
+                hash_len_start = self.reader.tell()
                 hash_len = self.reader.read_u32()
+                hash_len_end = self.reader.tell()
+                attr_offsets["hash_len"] = FieldOffset(hash_len_start, hash_len_end)
+
+                # Смещение самого хеша
+                hash_start = self.reader.tell()
                 hash_bytes = self.reader.read_bytes(hash_len)
                 hash_str = hash_bytes.decode("utf-8", errors="replace")
-                attr_offsets["hash_len"] = FieldOffset(hash_start, self.reader.tell())
-            else:  # int hash
-                hash_int = self.reader.read_u32()
-                attr_offsets["hash"] = FieldOffset(hash_start, self.reader.tell())
+                hash_end = self.reader.tell()
+                attr_offsets["hash"] = FieldOffset(hash_start, hash_end)
 
-            attrs.append(
-                HashedAttribute(
-                    name=name,
-                    type_id=attr_type,
-                    hash_str=hash_str,
-                    hash_int=hash_int,
-                    offsets=attr_offsets,
+                attrs.append(
+                    HashedAttribute(
+                        name=name,
+                        type_id=attr_type,
+                        hash_str=hash_str,
+                        hash_int=None,
+                        offsets=attr_offsets,
+                    )
                 )
-            )
+            else:  # int hash
+                hash_start = self.reader.tell()
+                hash_int = self.reader.read_u32()
+                hash_end = self.reader.tell()
+                attr_offsets["hash"] = FieldOffset(hash_start, hash_end)
+
+                attrs.append(
+                    HashedAttribute(
+                        name=name,
+                        type_id=attr_type,
+                        hash_str=None,
+                        hash_int=hash_int,
+                        offsets=attr_offsets,
+                    )
+                )
+
             attrs_offsets[f"attr_{ai}"] = attr_offsets
 
         return attrs, attrs_offsets

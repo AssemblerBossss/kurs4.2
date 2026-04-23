@@ -331,27 +331,18 @@ class KeyringVisualizer:
 
                 # ATTR HASH
                 if attr.type_id == 0:  # string
-                    # Для строкового хеша нужно найти смещение хеша
-                    # Оно хранится после длины, поэтому используем hash_start/end
-                    if "hash_len" in attr.offsets:
-                        # hash_len — это смещение поля длины
-                        hash_len_offset = attr.offsets["hash_len"]
-                        # Сам хеш начинается после длины
-                        hash_start = hash_len_offset.end
-                        hash_end = (
-                            self.data.find(b"\x00", hash_start) or hash_start + 32
-                        )
-                        self._dump_field(
-                            start=hash_start,
-                            end=hash_end,
-                            name=f"    ATTR[{attr.name}].STR_HASH ({attr.hash_str and len(attr.hash_str) or 0} B)",
+                    if "hash" in attr.offsets:
+                        self._dump_field_from_offset(
+                            offset=attr.offsets["hash"],
+                            name=f"    ATTR[{attr.name}].STR_HASH ({len(attr.hash_str) if attr.hash_str else 0} B)",
                             value_str=repr(attr.hash_str),
                             color=COLOR_HASH,
                         )
                     else:
+                        # fallback (если вдруг нет)
                         self._dump_field(
-                            start=attr.offsets["hash"].start,
-                            end=attr.offsets["hash"].end,
+                            start=attr.offsets["hash_len"].end,
+                            end=attr.offsets["hash_len"].end + 32,
                             name=f"    ATTR[{attr.name}].STR_HASH",
                             value_str=repr(attr.hash_str),
                             color=COLOR_HASH,
@@ -360,7 +351,11 @@ class KeyringVisualizer:
                     self._dump_field_from_offset(
                         offset=attr.offsets["hash"],
                         name=f"    ATTR[{attr.name}].INT_HASH",
-                        value_str=f"0x{attr.hash_int:08x}" if attr.hash_int else "",
+                        value_str=(
+                            f"0x{attr.hash_int:08x}"
+                            if attr.hash_int is not None
+                            else ""
+                        ),
                         color=COLOR_HASH,
                     )
 
