@@ -331,6 +331,7 @@ class KeyringParser:
         return KeyringFile(
             filepath=self.filepath,
             file_size=len(self.data),
+            data=self.data,
             header=header,
             hashed_items=hashed_items,
             encrypted_blob=encrypted_data,

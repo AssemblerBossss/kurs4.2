@@ -173,6 +173,7 @@ class DecryptedItem:
 class KeyringFile:
     """Полностью разобранный .keyring файл."""
 
+    data: bytes = field(repr=False)
     filepath: str
     file_size: int
     header: KeyringHeader
