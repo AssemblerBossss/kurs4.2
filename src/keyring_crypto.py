@@ -10,7 +10,6 @@ keyring_crypto.py — Криптографические операции для
 """
 
 import hashlib
-import struct
 import sys
 
 from src.keyring_models import KeyringFile, DecryptedItem, DecryptedAttribute
@@ -36,7 +35,7 @@ def derive_key(password: str, salt: bytes, iterations: int) -> tuple[bytes, byte
     """
 
     # Начальное значение: SHA-256(password || salt)
-    h = hashlib.sha256(salt + password.encode("utf8")).digest()
+    h = hashlib.sha256(password.encode("utf8") + salt).digest()
     for _ in range(iterations - 1):
         h = hashlib.sha256(h).digest()
 
@@ -89,16 +88,6 @@ def aes_decrypt(ciphertext: bytes, key: bytes, iv: bytes) -> bytes:
 
 
 def verify_decryption(plaintext_with_hash: bytes) -> tuple[bool, bytes]:
-    # if len(plaintext_with_hash) < 16:
-    #     return False, b""
-    #
-    # expected_hash = plaintext_with_hash[:16]
-    # plaintext = plaintext_with_hash[16:]
-    # actual_hash = hashlib.md5(plaintext).digest()
-    #
-    # return expected_hash == actual_hash, plaintext
-
-
     if len(plaintext_with_hash) < 16:
         return False, b""
 
@@ -106,11 +95,7 @@ def verify_decryption(plaintext_with_hash: bytes) -> tuple[bool, bytes]:
     raw_plaintext = plaintext_with_hash[16:]
     actual_hash = hashlib.md5(raw_plaintext).digest()
 
-    # Нулевой паддинг снимаем только для возврата
-    plaintext = raw_plaintext.rstrip(b'\x00')
-
-    return expected_hash == actual_hash, plaintext
-
+    return expected_hash == actual_hash, raw_plaintext
 
 
 def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
@@ -190,122 +175,6 @@ def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
         )
 
     return items
-
-
-# def decrypt_keyring(keyring: KeyringFile, password: str) -> bool:
-#     """
-#     Выполняет расшифровку хранилища с заданным мастер-паролем.
-#
-#     Процесс:
-#         1. Вычислить ключ и IV через KDF
-#         2. Расшифровать AES-128-CBC
-#         3. Снять PKCS7 паддинг
-#         4. Проверить MD5 верификацию
-#         5. Разобрать plaintext в записи
-#         6. Совместить item_id из hashed_items
-#
-#     Args:
-#         keyring: Объект KeyringFile (заполняется результат)
-#         password: Мастер-пароль
-#
-#     Returns:
-#         True при успешной расшифровке, False при ошибке
-#     """
-#     header = keyring.header
-#
-#     # 1. Деривация ключа
-#     key, iv = derive_key(password, header.kdf_salt, header.kdf_iterations)
-#
-#     # 2. Расшифровка
-#     try:
-#         raw = aes_decrypt(keyring.encrypted_blob, key, iv)
-#     except Exception as e:
-#         keyring.decryption_ok = False
-#         return False
-#
-#     # 3. Снятие паддинга
-#     try:
-#         raw_unpadded = pkcs7_unpad(raw)
-#     except ValueError:
-#         keyring.decryption_ok = False
-#         return False
-#
-#     # 4. Верификация MD5
-#     ok, plaintext = verify_decryption(raw_unpadded)
-#     if not ok:
-#         keyring.decryption_ok = False
-#         return False
-#
-#     # 5. Разбор расшифрованных записей
-#     try:
-#         items = parse_decrypted_items(plaintext, len(keyring.hashed_items))
-#
-#         # 6. Совмещаем item_id из hashed section
-#         for i, item in enumerate(items):
-#             if i < len(keyring.hashed_items):
-#                 item.item_id = keyring.hashed_items[i].item_id
-#
-#         keyring.decrypted_items = items
-#         keyring.decryption_ok = True
-#         return True
-#
-#     except Exception as e:
-#         keyring.decryption_ok = False
-#         return False
-#
-# def decrypt_keyring(keyring: KeyringFile, password: str, verbose: bool = False) -> bool:
-#     header = keyring.header
-#
-#     if verbose:
-#         print(f"[*] KDF: iterations={header.kdf_iterations}, salt={header.kdf_salt.hex()}", file=sys.stderr)
-#
-#     key, iv = derive_key(password, header.kdf_salt, header.kdf_iterations)
-#     if verbose:
-#         print(f"[*] Derived key: {key.hex()}, iv: {iv.hex()}", file=sys.stderr)
-#         print(f"[*] Encrypted blob size: {len(keyring.encrypted_blob)} bytes", file=sys.stderr)
-#
-#     try:
-#         raw = aes_decrypt(keyring.encrypted_blob, key, iv)
-#         if verbose:
-#             print(f"[*] AES decryption OK, raw size: {len(raw)}", file=sys.stderr)
-#     except Exception as e:
-#         if verbose:
-#             print(f"[!] AES error: {e}", file=sys.stderr)
-#         keyring.decryption_ok = False
-#         return False
-#
-#     try:
-#         raw_unpadded = pkcs7_unpad(raw)
-#         if verbose:
-#             print(f"[*] PKCS7 unpad OK, size: {len(raw_unpadded)}", file=sys.stderr)
-#     except ValueError as e:
-#         if verbose:
-#             print(f"[!] PKCS7 error: {e}", file=sys.stderr)
-#         keyring.decryption_ok = False
-#         return False
-#
-#     ok, plaintext = verify_decryption(raw_unpadded)
-#     if not ok:
-#         if verbose:
-#             print(f"[!] MD5 verification failed", file=sys.stderr)
-#         keyring.decryption_ok = False
-#         return False
-#     if verbose:
-#         print(f"[*] MD5 verification OK, plaintext size: {len(plaintext)}", file=sys.stderr)
-#
-#     try:
-#         items = parse_decrypted_items(plaintext, len(keyring.hashed_items))
-#         for i, item in enumerate(items):
-#             if i < len(keyring.hashed_items):
-#                 item.item_id = keyring.hashed_items[i].item_id
-#         keyring.decrypted_items = items
-#         keyring.decryption_ok = True
-#         return True
-#     except Exception as e:
-#         if verbose:
-#             print(f"[!] parse_decrypted_items error: {e}", file=sys.stderr)
-#         keyring.decryption_ok = False
-#         return False
 
 
 def decrypt_keyring(keyring: KeyringFile, password: str, verbose: bool = False) -> bool:
