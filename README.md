@@ -1,13 +1,13 @@
 # GNOME Keyring Analyzer
 
-Инструмент для анализа и расшифровки файлов `.keyring`
+Инструмент для анализа и расшифровки файлов `.keyring` (GNOME Keyring / libsecret).
 
 ## Возможности
 
 - Парсинг бинарной структуры файла `.keyring`
 - Визуализация всех блоков: заголовок, hashed items, зашифрованный блок
 - Расшифровка секретов с помощью мастер-пароля
-- Вывод в человеко-читаемом формате и JSON
+- Генерация хэша для перебора через **Hashcat** и **John the Ripper**
 
 ## Установка
 
@@ -36,6 +36,9 @@ python cli.py <файл.keyring> [опции]
 | `--password`, `-p` | Мастер-пароль для расшифровки |
 | `--json` | Вывод в формате JSON (только с `--decrypt`) |
 | `--verbose`, `-v` | Подробный отладочный вывод |
+| `--hashcat` | Сгенерировать хэш для Hashcat (режим 23800) |
+| `--john` | Сгенерировать хэш для John the Ripper |
+| `--save-hash FILE` | Сохранить сгенерированный хэш в файл |
 
 ### Примеры
 
@@ -54,6 +57,17 @@ python cli.py login.keyring --decrypt --password "ваш_пароль" --json
 
 # Отладочный вывод при расшифровке
 python cli.py login.keyring --decrypt --password "ваш_пароль" --verbose
+
+# Сгенерировать хэш для Hashcat
+python cli.py login.keyring --hashcat
+
+# Сгенерировать хэш, сохранить в файл и запустить перебор
+python cli.py login.keyring --hashcat --save-hash hash.txt
+hashcat -m 23800 -a 0 hash.txt /usr/share/wordlists/rockyou.txt
+
+# Сгенерировать хэш для John the Ripper
+python cli.py login.keyring --john --save-hash john.txt
+john --format=gnome-keyring john.txt --wordlist=rockyou.txt
 ```
 
 ## Структура проекта
@@ -66,9 +80,9 @@ python cli.py login.keyring --decrypt --password "ваш_пароль" --verbose
     ├── keyring_models.py     # Модели данных (dataclasses)
     ├── keyring_parser.py     # Парсер структуры .keyring файла
     ├── keyring_crypto.py     # Криптография: KDF, AES, MD5-верификация
+    ├── keyring_hash.py       # Генератор хэшей для Hashcat и John
     └── keyring_visualizer.py # Визуализация структуры файла
 ```
-
 
 ## Где находится файл keyring
 
@@ -79,4 +93,3 @@ python cli.py login.keyring --decrypt --password "ваш_пароль" --verbose
 ```
 
 Файл `login.keyring` шифруется паролем входа в систему (тем же, что вводится при логине).
-

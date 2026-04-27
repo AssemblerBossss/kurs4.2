@@ -4,12 +4,12 @@ import json
 from src.keyring_parser import KeyringParser
 from src.keyring_visualizer import KeyringVisualizer
 from src.keyring_crypto import decrypt_keyring
-from src.keyring_hash import KeyringHashGenerator  # Добавьте этот импорт
+from src.keyring_hash import KeyringHashGenerator
 
 
 def cli() -> None:
     parser = argparse.ArgumentParser(
-        description="Анализатор и дешифровщик файлов GNOME Keyring",
+        description="Анализатор GNOME Keyring",
         usage="%(prog)s [options] <файл.keyring>",
     )
 
@@ -63,23 +63,20 @@ def cli() -> None:
         print(f"Ошибка парсинга: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Режим hashcat
     if args.hashcat:
         try:
             generator = KeyringHashGenerator(keyring)
             hash_str = generator.generate_hash("hashcat")
-
-            # Выводим хэш
             print(hash_str)
 
             # Сохраняем в файл если нужно
             if args.save_hash:
                 with open(args.save_hash, "w") as f:
                     f.write(f"{hash_str}\n")
-                print(f"[+] Хэш сохранён в: {args.save_hash}", file=sys.stderr)
+                print(f"Хэш сохранён в: {args.save_hash}", file=sys.stderr)
 
             # Полезная информация
-            print(f"\n[+] Информация для HashCat:", file=sys.stderr)
+            print(f"\nИнформация для HashCat:", file=sys.stderr)
             print(f"    Режим: 23800 (GNOME Keyring)", file=sys.stderr)
             print(f"    Итераций: {keyring.header.kdf_iterations}", file=sys.stderr)
             print(
@@ -100,23 +97,20 @@ def cli() -> None:
             sys.exit(1)
         return
 
-    # Режим john
     if args.john:
         try:
             generator = KeyringHashGenerator(keyring)
             hash_str = generator.generate_hash("john")
-
-            # Выводим хэш
             print(hash_str)
 
             # Сохраняем в файл если нужно
             if args.save_hash:
                 with open(args.save_hash, "w") as f:
                     f.write(f"{hash_str}\n")
-                print(f"[+] Хэш сохранён в: {args.save_hash}", file=sys.stderr)
+                print(f"Хэш сохранён в: {args.save_hash}", file=sys.stderr)
 
             # Полезная информация
-            print(f"\n[+] Информация для John the Ripper:", file=sys.stderr)
+            print(f"\nИнформация для John the Ripper:", file=sys.stderr)
             print(f"    Формат: gnome-keyring", file=sys.stderr)
             print(f"    Итераций: {keyring.header.kdf_iterations}", file=sys.stderr)
             print(f"\n    Пример запуска John:", file=sys.stderr)
@@ -144,7 +138,6 @@ def cli() -> None:
             sys.exit(1)
 
         if args.json:
-            # Сериализуем расшифрованные данные в JSON
             output = []
             for item in keyring.decrypted_items:
                 output.append(
@@ -162,8 +155,7 @@ def cli() -> None:
                 )
             print(json.dumps(output, ensure_ascii=False, indent=2))
         else:
-            # Человеко-читаемый вывод
-            print(f"\n[+] Расшифровка успешна (пароль: {args.password})\n")
+            print(f"\nРасшифровка успешна (пароль: {args.password})\n")
             for item in keyring.decrypted_items:
                 print(f"Запись #{item.item_id}: {item.display_name!r}")
                 print(f"  Секрет: {item.secret!r}")
@@ -189,7 +181,6 @@ def cli() -> None:
     elif args.encrypted:
         vis.dump_encrypted_block()
     else:
-        # Полный дамп (по умолчанию)
         vis.dump_all()
 
 
