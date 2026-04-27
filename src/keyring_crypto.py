@@ -36,6 +36,7 @@ def derive_key(password: str, salt: bytes, iterations: int) -> tuple[bytes, byte
 
     # Начальное значение: SHA-256(password || salt)
     h = hashlib.sha256(password.encode("utf8") + salt).digest()
+
     for _ in range(iterations - 1):
         h = hashlib.sha256(h).digest()
 
@@ -88,6 +89,21 @@ def aes_decrypt(ciphertext: bytes, key: bytes, iv: bytes) -> bytes:
 
 
 def verify_decryption(plaintext_with_hash: bytes) -> tuple[bool, bytes]:
+    """
+    Проверяет целостность расшифрованных данных через MD5.
+
+    Формат расшифрованного блока:
+        [MD5(raw_plaintext)][raw_plaintext]
+        16 байт хэша          остальные данные
+
+    Args:
+        plaintext_with_hash: Расшифрованные данные с MD5 хэшем в начале
+
+    Returns:
+        tuple[bool, bytes]: Кортеж из двух элементов:
+            - bool: True если хэш совпадает, иначе False
+            - bytes: Исходные данные без хэша (при успехе) или пустая строка (при ошибке)
+    """
     if len(plaintext_with_hash) < 16:
         return False, b""
 
@@ -126,58 +142,91 @@ def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
     """
     from src.binary_reader import BinaryReader
 
-    r = BinaryReader(data)
-    items = []
+    reader = BinaryReader(data)
+    decrypted_items = []
 
-    for _ in range(num_items):
-        # Основные поля
-        display_name = r.read_string() or ""
-        secret = r.read_string() or ""
-        ctime = r.read_time()
-        mtime = r.read_time()
+    for item_index in range(num_items):
+        display_name = (
+            reader.read_string() or ""
+        )
+        secret = reader.read_string() or ""     # Сохранённый пароль/секрет
+        creation_time = reader.read_time()      # Время создания записи
+        modification_time = reader.read_time()  # Время последнего изменения
 
-        # Зарезервированные поля (пропускаем)
-        _reserved_str = r.read_string()
-        _reserved_int = [r.read_u32() for _ in range(4)]
+        # === ЗАРЕЗЕРВИРОВАННЫЕ ПОЛЯ (не используются, пропускаем) ===
+        _unused_string_field = reader.read_string()  # Зарезервировано, всегда пусто
+        _unused_integers = [
+            reader.read_u32() for _ in range(4)
+        ]  # 4 зарезервированных числа
 
-        # Атрибуты
-        num_attrs = r.read_u32()
-        attrs = []
-        for _ in range(num_attrs):
-            aname = r.read_string() or ""
-            atype = r.read_u32()
+        # === АТРИБУТЫ ===
+        attributes_count = reader.read_u32()
+        attributes = []
 
-            if atype == 0:
-                aval: str | int = r.read_string() or ""
+        for _ in range(attributes_count):
+            attribute_name = (
+                reader.read_string() or ""
+            )
+            attribute_type = reader.read_u32()  # 0 = строка, 1 = число
+
+            if attribute_type == 0:
+                attribute_value: str | int = reader.read_string() or ""
             else:
-                aval = r.read_u32()
+                attribute_value = reader.read_u32()
 
-            attrs.append(DecryptedAttribute(aname, atype, aval))
+            attributes.append(
+                DecryptedAttribute(attribute_name, attribute_type, attribute_value)
+            )
 
-        # ACL (Access Control List) — пропускаем
-        acl_len = r.read_u32()
-        for _ in range(acl_len):
-            r.read_u32()  # types_allowed
-            r.read_string()  # display_name
-            r.read_string()  # pathname
-            r.read_string()  # reserved
-            r.read_u32()  # reserved int
+        # === ACL (СПИСОК КОНТРОЛЯ ДОСТУПА) ===
+        # Определяет, какие приложения могут получить доступ к записи
+        acl_entries_count = reader.read_u32()
 
-        items.append(
+        for _ in range(acl_entries_count):
+            reader.read_u32()       # allowed_access_types (битовая маска разрешений)
+            reader.read_string()    # application_display_name (имя приложения)
+            reader.read_string()    # application_path (путь к приложению)
+            reader.read_string()    # reserved_string (зарезервировано)
+            reader.read_u32()       # reserved_integer (зарезервировано)
+
+        decrypted_items.append(
             DecryptedItem(
-                item_id=0,  # временно, потом заполним из hashed_items
+                item_id=0,
                 display_name=display_name,
                 secret=secret,
-                ctime=ctime,
-                mtime=mtime,
-                attributes=attrs,
+                ctime=creation_time,
+                mtime=modification_time,
+                attributes=attributes,
             )
         )
 
-    return items
+    return decrypted_items
 
 
 def decrypt_keyring(keyring: KeyringFile, password: str, verbose: bool = False) -> bool:
+    """
+    Основная функция расшифровки ключницы GNOME Keyring.
+
+    Выполняет полный цикл расшифровки:
+        1. Деривация ключа и IV из пароля (KDF)
+        2. Расшифровка AES-128-CBC
+        3. Верификация через MD5
+        4. Парсинг расшифрованных данных в структуры
+
+    Args:
+        keyring: Объект KeyringFile с загруженными данными
+        password: Мастер-пароль пользователя
+        verbose: Флаг подробного вывода
+
+    Returns:
+        bool: True если расшифровка успешна, иначе False
+
+    Note:
+        При успешной расшифровке заполняет поля keyring.decrypted_items
+        и keyring.decryption_ok = True.
+        При ошибке устанавливает keyring.decryption_ok = False.
+    """
+
     header = keyring.header
     key, iv = derive_key(password, header.kdf_salt, header.kdf_iterations)
 
