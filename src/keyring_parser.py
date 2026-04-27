@@ -67,6 +67,12 @@ class KeyringParser:
         hash_type = self.reader.read_u8()
         offsets["hash_type"] = FieldOffset(start, self.reader.tell())
 
+        if version_major != 0:
+            raise ValueError(
+                f"Неподдерживаемая версия формата: {version_major}.{version_minor} "
+                f"(поддерживается только версия 0, crypto=0, AES-128-CBC)"
+            )
+
         return version_major, version_minor, crypto_type, hash_type, offsets
 
     def _parse_name(self) -> tuple[str, dict[str, FieldOffset]]:
@@ -272,8 +278,6 @@ class KeyringParser:
 
         return encrypted_data, offsets
 
-        # ─── Главный метод парсинга ──────────────────────────────────────────────
-
     def parse_all(self) -> KeyringFile:
         """
         Извлекает все данные последовательно и возвращает KeyringFile.
@@ -336,30 +340,3 @@ class KeyringParser:
             hashed_items=hashed_items,
             encrypted_blob=encrypted_data,
         )
-
-        # ─── Вспомогательные методы ──────────────────────────────────────────────
-
-    def get_raw_bytes(self, start: int, end: int) -> bytes:
-        """Возвращает сырые байты для указанного диапазона."""
-        return self.data[start:end]
-
-    def get_current_offset(self) -> int:
-        """Возвращает текущую позицию в файле."""
-        return self.reader.tell()
-
-    @property
-    def offsets(self) -> dict[str, Any]:
-        """Возвращает смещения для визуализатора (совместимость со старым кодом)."""
-        # Конвертируем FieldOffset в простые int для обратной совместимости
-        result = {}
-        for key, value in self._offsets.items():
-            if isinstance(value, FieldOffset):
-                result[f"{key}_start"] = value.start
-                result[f"{key}_end"] = value.end
-            elif isinstance(value, dict):
-                # Рекурсивно обрабатываем вложенные словари
-                for subkey, subvalue in value.items():
-                    if isinstance(subvalue, FieldOffset):
-                        result[f"{key}_{subkey}_start"] = subvalue.start
-                        result[f"{key}_{subkey}_end"] = subvalue.end
-        return result
