@@ -29,12 +29,7 @@ class BinaryReader:
         return len(self._data) - self._offset
 
     def read_bytes(self, n: int) -> bytes:
-        """
-        Читает ровно n байт и сдвигает курсор.
-
-        Raises:
-            ValueError: если байт недостаточно.
-        """
+        """Читает ровно n байт и сдвигает курсор."""
         if self._offset + n > len(self._data):
             raise ValueError(
                 f"Неожиданный конец файла: запрошено {n} байт "
@@ -84,3 +79,17 @@ class BinaryReader:
 
         raw = self.read_bytes(length)
         return raw.decode("utf-8", errors="replace")
+
+    def read_byte_array(self) -> bytes | None:
+        """
+        Читает byte array: guint32 (длина) + raw bytes.
+        В отличие от read_string — не декодирует в UTF-8.
+        Возвращает None если длина == 0xFFFFFFFF.
+        """
+        length = self.read_u32()
+        if length == self._NULL_STRING:
+            return None
+        if length >= 0x7FFFFFFF:
+            raise ValueError(f"Некорректная длина byte array: 0x{length:08x}")
+        return self.read_bytes(length)
+

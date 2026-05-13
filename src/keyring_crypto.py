@@ -1,14 +1,3 @@
-"""
-keyring_crypto.py — Криптографические операции для GNOME Keyring
-
-Содержит:
-- KDF (Key Derivation Function) — SHA-256 итерационный
-- AES-128-CBC расшифровку
-- PKCS7 паддинг
-- Верификацию через MD5
-- Расшифровку записей
-"""
-
 import hashlib
 import sys
 
@@ -36,10 +25,8 @@ def derive_key(password: str, salt: bytes, iterations: int) -> tuple[bytes, byte
 
     # Начальное значение: SHA-256(password || salt)
     h = hashlib.sha256(password.encode("utf8") + salt).digest()
-
     for _ in range(iterations - 1):
         h = hashlib.sha256(h).digest()
-
     # Первые 16 байт — ключ, следующие 16 — IV
     return h[:16], h[16:32]
 
@@ -149,7 +136,12 @@ def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
         display_name = (
             reader.read_string() or ""
         )
-        secret = reader.read_string() or ""     # Сохранённый пароль/секрет
+        secret_raw = reader.read_byte_array() or ""
+        try:
+            secret = secret_raw.decode("utf-8")
+        except UnicodeDecodeError:
+            secret = secret_raw.hex()
+        # Сохранённый пароль/секрет
         creation_time = reader.read_time()      # Время создания записи
         modification_time = reader.read_time()  # Время последнего изменения
 

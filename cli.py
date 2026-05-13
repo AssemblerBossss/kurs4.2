@@ -183,6 +183,5 @@ def cli() -> None:
     else:
         vis.dump_all()
 
-
 if __name__ == "__main__":
     cli()
