@@ -58,12 +58,8 @@ python cli.py login.keyring --decrypt --password "ваш_пароль" --json
 # Отладочный вывод при расшифровке
 python cli.py login.keyring --decrypt --password "ваш_пароль" --verbose
 
-# Сгенерировать хэш для Hashcat
-python cli.py login.keyring --hashcat
-
-# Сгенерировать хэш, сохранить в файл и запустить перебор
-python cli.py login.keyring --hashcat --save-hash hash.txt
-hashcat -m 23800 -a 0 hash.txt /usr/share/wordlists/rockyou.txt
+# Сгенерировать хэш для john
+python cli.py login.keyring --john
 
 # Сгенерировать хэш для John the Ripper
 python cli.py login.keyring --john --save-hash john.txt

@@ -2,6 +2,7 @@ import hashlib
 import sys
 
 from src.keyring_models import KeyringFile, DecryptedItem, DecryptedAttribute
+from .keyring_parser import BinaryReader
 
 
 def derive_key(password: str, salt: bytes, iterations: int) -> tuple[bytes, bytes]:
@@ -127,7 +128,6 @@ def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
     Returns:
         Список расшифрованных записей
     """
-    from src.binary_reader import BinaryReader
 
     reader = BinaryReader(data)
     decrypted_items = []
