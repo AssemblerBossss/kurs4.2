@@ -59,66 +59,20 @@ def cli() -> None:
     try:
         parser_obj = KeyringParser(args.file)
         keyring = parser_obj.parse_all()
+        # from src.keyring_crypto import derive_key, aes_decrypt
+        # key, iv = derive_key("5689", keyring.header.kdf_salt, keyring.header.kdf_iterations)
+        # raw = aes_decrypt(keyring.encrypted_blob, key, iv)
+        # print("md5_hex для John:", raw[:16].hex())
+
     except Exception as e:
         print(f"Ошибка парсинга: {e}", file=sys.stderr)
         sys.exit(1)
 
-    if args.hashcat:
-        try:
-            generator = KeyringHashGenerator(keyring)
-            hash_str = generator.generate_hash("hashcat")
-            print(hash_str)
-
-            # Сохраняем в файл если нужно
-            if args.save_hash:
-                with open(args.save_hash, "w") as f:
-                    f.write(f"{hash_str}\n")
-                print(f"Хэш сохранён в: {args.save_hash}", file=sys.stderr)
-
-            # Полезная информация
-            print(f"\nИнформация для HashCat:", file=sys.stderr)
-            print(f"    Режим: 23800 (GNOME Keyring)", file=sys.stderr)
-            print(f"    Итераций: {keyring.header.kdf_iterations}", file=sys.stderr)
-            print(
-                f"    Длина соли: {len(keyring.header.kdf_salt)} байт", file=sys.stderr
-            )
-            print(
-                f"    Размер зашифрованных данных: {len(keyring.encrypted_blob)} байт",
-                file=sys.stderr,
-            )
-            print(f"\n    Пример запуска HashCat:", file=sys.stderr)
-            print(
-                f"    hashcat -m 23800 -a 0 {args.save_hash or 'hash.txt'} /usr/share/wordlists/rockyou.txt",
-                file=sys.stderr,
-            )
-
-        except ValueError as e:
-            print(f"Ошибка: {e}", file=sys.stderr)
-            sys.exit(1)
-        return
-
     if args.john:
         try:
             generator = KeyringHashGenerator(keyring)
-            hash_str = generator.generate_hash("john")
+            hash_str = generator.generate_john_hash()
             print(hash_str)
-
-            # Сохраняем в файл если нужно
-            if args.save_hash:
-                with open(args.save_hash, "w") as f:
-                    f.write(f"{hash_str}\n")
-                print(f"Хэш сохранён в: {args.save_hash}", file=sys.stderr)
-
-            # Полезная информация
-            print(f"\nИнформация для John the Ripper:", file=sys.stderr)
-            print(f"    Формат: gnome-keyring", file=sys.stderr)
-            print(f"    Итераций: {keyring.header.kdf_iterations}", file=sys.stderr)
-            print(f"\n    Пример запуска John:", file=sys.stderr)
-            print(
-                f"    john --format=gnome-keyring {args.save_hash or 'john.txt'} --wordlist=rockyou.txt",
-                file=sys.stderr,
-            )
-
         except ValueError as e:
             print(f"Ошибка: {e}", file=sys.stderr)
             sys.exit(1)
