@@ -1,9 +1,7 @@
 import struct
-from typing import Any
 from src.keyring_models import (
     MAGIC,
     MAGIC_SIZE,
-    NULL_STRING,
     KeyringHeader,
     KeyringFile,
 )
@@ -11,18 +9,12 @@ from src.keyring_models import (
 
 class BinaryReader:
     _NULL_STRING: int = 0xFFFF_FFFF
-    _FMT_U8 = struct.Struct(">B")  # 1 байт,  unsigned
-    _FMT_U32 = struct.Struct(">I")  # 4 байта, unsigned big-endian
+    _FMT_U8 = struct.Struct(">B")
+    _FMT_U32 = struct.Struct(">I")
 
     def __init__(self, data: bytes):
         self._data = data
         self._offset = 0
-
-    def tell(self) -> int:
-        return self._offset
-
-    def remaining(self):
-        return len(self._data) - self._offset
 
     def read_bytes(self, n: int) -> bytes:
         if self._offset + n > len(self._data):
@@ -89,7 +81,6 @@ class KeyringParser:
             )
 
         # Пропускаем name, ctime, mtime, flags, lock_timeout
-        # (поля заголовка, не нужные для расшифровки)
         self.reader.read_string()  # name
         self.reader.read_time()  # ctime
         self.reader.read_time()  # mtime
@@ -110,24 +101,22 @@ class KeyringParser:
         )
 
     def _skip_hashed_attributes(self, num_attrs: int) -> None:
-        """Пропускает num_attrs хешированных атрибутов — для расшифровки они не нужны."""
         for _ in range(num_attrs):
             name_len = self.reader.read_u32()
-            self.reader.read_bytes(name_len)        # name
+            self.reader.read_bytes(name_len)
             attr_type = self.reader.read_u32()
-            if attr_type == 0:                      # string hash
+            if attr_type == 0:
                 hash_len = self.reader.read_u32()
                 self.reader.read_bytes(hash_len)
-            else:                                   # int hash
+            else:
                 self.reader.read_u32()
 
     def _parse_hashed_item_ids(self) -> list[int]:
-        """Читает hashed items, возвращает только item_id каждой записи."""
         num_items = self.reader.read_u32()
         ids: list[int] = []
         for _ in range(num_items):
             item_id = self.reader.read_u32()
-            self.reader.read_u32()                  # item_type
+            self.reader.read_u32()
             num_attrs = self.reader.read_u32()
             self._skip_hashed_attributes(num_attrs)
             ids.append(item_id)

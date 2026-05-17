@@ -1,8 +1,7 @@
 import argparse
 import sys
 from src.keyring_parser import KeyringParser
-from src.keyring_crypto import decrypt_keyring
-from src.keyring_hash import KeyringHashGenerator
+from src.keyring_crypto import decrypt_keyring, KeyringHashGenerator
 import getpass
 
 
