@@ -23,17 +23,7 @@ def cli() -> None:
         "--hashed", action="store_true", help="Показать только hashed items (блок 5)"
     )
     group.add_argument(
-        "--encrypted",
-        action="store_true",
-        help="Показать только зашифрованный блок (блок 6)",
-    )
-    group.add_argument(
         "--decrypt", action="store_true", help="Расшифровать и показать секреты"
-    )
-    group.add_argument(
-        "--hashcat",
-        action="store_true",
-        help="Сгенерировать строку для hashcat (режим 23800)",
     )
     group.add_argument(
         "--john",
@@ -46,23 +36,12 @@ def cli() -> None:
     parser.add_argument(
         "--json", action="store_true", help="Вывод в формате JSON (только с --decrypt)"
     )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Подробный вывод отладки"
-    )
-
-    # Параметры для сохранения хэша
-    parser.add_argument("--save-hash", metavar="FILE", help="Сохранить хэш в файл")
 
     args = parser.parse_args()
 
-    # Парсинг файла
     try:
         parser_obj = KeyringParser(args.file)
         keyring = parser_obj.parse_all()
-        # from src.keyring_crypto import derive_key, aes_decrypt
-        # key, iv = derive_key("5689", keyring.header.kdf_salt, keyring.header.kdf_iterations)
-        # raw = aes_decrypt(keyring.encrypted_blob, key, iv)
-        # print("md5_hex для John:", raw[:16].hex())
 
     except Exception as e:
         print(f"Ошибка парсинга: {e}", file=sys.stderr)
@@ -132,10 +111,9 @@ def cli() -> None:
         vis.dump_kdf_params()
     elif args.hashed:
         vis.dump_hashed_items()
-    elif args.encrypted:
-        vis.dump_encrypted_block()
     else:
         vis.dump_all()
+
 
 if __name__ == "__main__":
     cli()

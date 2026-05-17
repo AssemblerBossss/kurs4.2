@@ -60,10 +60,10 @@ def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
         except UnicodeDecodeError:
             secret = secret_raw.hex()
 
-        creation_time = reader.read_time()  # Время создания записи
-        modification_time = reader.read_time()  # Время последнего изменения
+        creation_time = reader.read_time()
+        modification_time = reader.read_time()
 
-        _unused_string_field = reader.read_string()  # Зарезервировано, всегда пусто
+        _unused_string_field = reader.read_string()
         _unused_integers = [
             reader.read_u32() for _ in range(4)
         ]  # 4 зарезервированных числа
