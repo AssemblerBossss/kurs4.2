@@ -29,34 +29,15 @@ python cli.py <файл.keyring> [опции]
 
 | Опция | Описание |
 |---|---|
-| `--header` | Показать только заголовок (блоки 1–4) |
-| `--hashed` | Показать только hashed items (блок 5) |
-| `--encrypted` | Показать зашифрованный блок (блок 6) |
 | `--decrypt` | Расшифровать и показать секреты |
 | `--password`, `-p` | Мастер-пароль для расшифровки |
-| `--json` | Вывод в формате JSON (только с `--decrypt`) |
-| `--verbose`, `-v` | Подробный отладочный вывод |
-| `--hashcat` | Сгенерировать хэш для Hashcat (режим 23800) |
 | `--john` | Сгенерировать хэш для John the Ripper |
-| `--save-hash FILE` | Сохранить сгенерированный хэш в файл |
 
 ### Примеры
 
 ```bash
-# Полный дамп структуры файла
-python cli.py login.keyring
-
-# Только заголовок
-python cli.py login.keyring --header
-
 # Расшифровать секреты
 python cli.py login.keyring --decrypt --password "ваш_пароль"
-
-# Расшифровать и вывести JSON
-python cli.py login.keyring --decrypt --password "ваш_пароль" --json
-
-# Отладочный вывод при расшифровке
-python cli.py login.keyring --decrypt --password "ваш_пароль" --verbose
 
 # Сгенерировать хэш для john
 python cli.py login.keyring --john
@@ -77,7 +58,6 @@ john --format=gnome-keyring john.txt --wordlist=rockyou.txt
     ├── keyring_parser.py     # Парсер структуры .keyring файла
     ├── keyring_crypto.py     # Криптография: KDF, AES, MD5-верификация
     ├── keyring_hash.py       # Генератор хэшей для Hashcat и John
-    └── keyring_visualizer.py # Визуализация структуры файла
 ```
 
 ## Где находится файл keyring

@@ -31,9 +31,9 @@ def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
     reader = BinaryReader(data)
     decrypted_items = []
 
-    for item_index in range(num_items):
+    for _ in range(num_items):
         display_name = reader.read_string() or ""
-        secret_raw = reader.read_byte_array() or ""
+        secret_raw = reader.read_byte_array() or b""
         try:
             secret = secret_raw.decode("utf-8")
         except UnicodeDecodeError:
@@ -42,34 +42,30 @@ def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
         creation_time = reader.read_time()
         modification_time = reader.read_time()
 
-        reader.read_string()
+        reader.read_string()  # reserved string
         for _ in range(4):
-            reader.read_u32()
+            reader.read_u32()  # 4 reserved integers
 
         attributes_count = reader.read_u32()
         attributes = []
-
         for _ in range(attributes_count):
             attribute_name = reader.read_string() or ""
-            attribute_type = reader.read_u32()  # 0 = строка, 1 = число
-
+            attribute_type = reader.read_u32()
             if attribute_type == 0:
                 attribute_value: str | int = reader.read_string() or ""
             else:
                 attribute_value = reader.read_u32()
-
             attributes.append(
                 DecryptedAttribute(attribute_name, attribute_type, attribute_value)
             )
 
         acl_entries_count = reader.read_u32()
-
         for _ in range(acl_entries_count):
-            reader.read_u32()  # allowed_access_types (битовая маска разрешений)
-            reader.read_string()  # application_display_name (имя приложения)
-            reader.read_string()  # application_path (путь к приложению)
-            reader.read_string()  # reserved_string (зарезервировано)
-            reader.read_u32()  # reserved_integer (зарезервировано)
+            reader.read_u32()  # allowed_access_types
+            reader.read_string()  # application_display_name
+            reader.read_string()  # application_path
+            reader.read_string()  # reserved_string
+            reader.read_u32()  # reserved_integer
 
         decrypted_items.append(
             DecryptedItem(
@@ -94,10 +90,10 @@ def decrypt_keyring(keyring: KeyringFile, password: str) -> bool:
         if not ok:
             raise ValueError("Неверный пароль или повреждённые данные")
 
-        items = parse_decrypted_items(plaintext, len(keyring.hashed_items))
+        items = parse_decrypted_items(plaintext, len(keyring.hashed_item_ids))
         for i, item in enumerate(items):
-            if i < len(keyring.hashed_items):
-                item.item_id = keyring.hashed_items[i].item_id
+            if i < len(keyring.hashed_item_ids):
+                item.item_id = keyring.hashed_item_ids[i]
 
         keyring.decrypted_items = items
         keyring.decryption_ok = True
