@@ -11,6 +11,7 @@ from src.keyring_models import (
     FieldOffset,
 )
 
+
 class BinaryReader:
     _NULL_STRING: int = 0xFFFF_FFFF
     _FMT_U8 = struct.Struct(">B")  # 1 байт,  unsigned
@@ -21,15 +22,12 @@ class BinaryReader:
         self._offset = 0
 
     def tell(self) -> int:
-        """Возвращает текущую позицию курсора (в байтах от начала)."""
         return self._offset
 
     def remaining(self):
-        """Сколько байт ещё не прочитано."""
         return len(self._data) - self._offset
 
     def read_bytes(self, n: int) -> bytes:
-        """Читает ровно n байт и сдвигает курсор."""
         if self._offset + n > len(self._data):
             raise ValueError(
                 f"Неожиданный конец файла: запрошено {n} байт "
@@ -41,39 +39,18 @@ class BinaryReader:
         return chunk
 
     def read_u8(self) -> int:
-        """1 байт → unsigned int (0–255)."""
         return self._FMT_U8.unpack(self.read_bytes(1))[0]
 
     def read_u32(self) -> int:
-        """4 байта big-endian → unsigned int (0–4 294 967 295)."""
         return self._FMT_U32.unpack(self.read_bytes(4))[0]
 
     def read_time(self) -> int:
-        """
-        Читает 64-битную метку времени Unix (time_t).
-
-        Формат хранения: два последовательных guint32 (hi, lo),
-        объединяемых в одно 64-битное число: result = (hi << 32) | lo.
-
-        Returns:
-            Количество секунд с 1970-01-01 00:00:00 UTC.
-        """
         hi = self.read_u32()
         lo = self.read_u32()
         return (hi << 32) | lo
 
     def read_string(self) -> str | None:
-        """
-        Читает строку в формате: guint32 (длина) + bytes (UTF-8).
-
-        Специальное значение длины 0xFFFFFFFF означает NULL —
-        метод вернёт None вместо строки.
-
-        Returns:
-            Декодированная строка или None, если длина == 0xFFFFFFFF.
-        """
         length = self.read_u32()
-
         if length == self._NULL_STRING:
             return None
 
@@ -81,11 +58,6 @@ class BinaryReader:
         return raw.decode("utf-8", errors="replace")
 
     def read_byte_array(self) -> bytes | None:
-        """
-        Читает byte array: guint32 (длина) + raw bytes.
-        В отличие от read_string — не декодирует в UTF-8.
-        Возвращает None если длина == 0xFFFFFFFF.
-        """
         length = self.read_u32()
         if length == self._NULL_STRING:
             return None
@@ -94,11 +66,7 @@ class BinaryReader:
         return self.read_bytes(length)
 
 
-
-
 class KeyringParser:
-    """Парсер файла .keyring — извлекает структурированные данные без вывода."""
-
     def __init__(self, filepath: str):
         with open(filepath, "rb") as f:
             self.data = f.read()
@@ -106,20 +74,15 @@ class KeyringParser:
         self.reader = BinaryReader(self.data)
         self.filepath: str = filepath
 
-        # Смещения всех полей (для визуализатора)
         self._offsets: dict[str, Any] = {}
 
-    # ─── Приватные методы для сохранения смещений ─────────────────────────────
     def _save_offset(self, name: str, start: int, end: int) -> None:
-        """Сохраняет смещение поля."""
         self._offsets[name] = FieldOffset(start=start, end=end)
 
     def _save_offset_pair(self, name: str, start: int) -> None:
-        """Сохраняет смещение с автоматическим определением конца (текущая позиция)."""
         self._save_offset(name, start, self.reader.tell())
 
     def _parse_magic(self) -> bytes:
-        """Извлекает сигнатуру (16 байт)."""
         start = self.reader.tell()
         magic = self.reader.read_bytes(MAGIC_SIZE)
         self._save_offset_pair("magic", start)
@@ -160,15 +123,12 @@ class KeyringParser:
         return version_major, version_minor, crypto_type, hash_type, offsets
 
     def _parse_name(self) -> tuple[str, dict[str, FieldOffset]]:
-        """Извлекает имя хранилища (guint32 len + bytes)."""
         offsets = {}
 
-        # Длина имени
         len_start = self.reader.tell()
         name_len = self.reader.read_u32()
         offsets["name_len"] = FieldOffset(len_start, self.reader.tell())
 
-        # Само имя
         name_start = self.reader.tell()
         if name_len == NULL_STRING:
             name = ""
@@ -180,25 +140,20 @@ class KeyringParser:
         return name, offsets
 
     def _parse_metadata(self) -> tuple[int, int, int, int, dict[str, FieldOffset]]:
-        """Извлекает ctime, mtime, flags, lock_timeout и их смещения."""
         offsets = {}
 
-        # CTIME
         start = self.reader.tell()
         ctime = self.reader.read_time()
         offsets["ctime"] = FieldOffset(start, self.reader.tell())
 
-        # MTIME
         start = self.reader.tell()
         mtime = self.reader.read_time()
         offsets["mtime"] = FieldOffset(start, self.reader.tell())
 
-        # FLAGS
         start = self.reader.tell()
         flags = self.reader.read_u32()
         offsets["flags"] = FieldOffset(start, self.reader.tell())
 
-        # LOCK_TIMEOUT
         start = self.reader.tell()
         lock_timeout = self.reader.read_u32()
         offsets["lock_timeout"] = FieldOffset(start, self.reader.tell())
@@ -206,20 +161,16 @@ class KeyringParser:
         return ctime, mtime, flags, lock_timeout, offsets
 
     def _parse_kdf_params(self) -> tuple[int, bytes, bytes, dict[str, FieldOffset]]:
-        """Извлекает параметры KDF и их смещения."""
         offsets = {}
 
-        # HASH_ITERATIONS
         start = self.reader.tell()
         iterations = self.reader.read_u32()
         offsets["kdf_iterations"] = FieldOffset(start, self.reader.tell())
 
-        # SALT (8 байт)
         start = self.reader.tell()
         salt = self.reader.read_bytes(8)
         offsets["kdf_salt"] = FieldOffset(start, self.reader.tell())
 
-        # RESERVED[4] (16 байт)
         start = self.reader.tell()
         reserved = self.reader.read_bytes(16)
         offsets["kdf_reserved"] = FieldOffset(start, self.reader.tell())
@@ -229,14 +180,12 @@ class KeyringParser:
     def _parse_hashed_attributes(
         self, num_attrs: int
     ) -> tuple[list[HashedAttribute], dict]:
-        """Извлекает атрибуты hashed item."""
         attrs = []
         attrs_offsets = {}
 
         for ai in range(num_attrs):
             attr_offsets = {}
 
-            # ATTR NAME
             name_len_start = self.reader.tell()
             name_len = self.reader.read_u32()
             attr_offsets["name_len"] = FieldOffset(name_len_start, self.reader.tell())
@@ -246,20 +195,16 @@ class KeyringParser:
             name = name_bytes.decode("utf-8", errors="replace")
             attr_offsets["name"] = FieldOffset(name_start, self.reader.tell())
 
-            # ATTR TYPE
             type_start = self.reader.tell()
             attr_type = self.reader.read_u32()
             attr_offsets["type"] = FieldOffset(type_start, self.reader.tell())
 
-            # ATTR HASH
             if attr_type == 0:  # string hash
-                # Смещение поля длины хеша
                 hash_len_start = self.reader.tell()
                 hash_len = self.reader.read_u32()
                 hash_len_end = self.reader.tell()
                 attr_offsets["hash_len"] = FieldOffset(hash_len_start, hash_len_end)
 
-                # Смещение самого хеша
                 hash_start = self.reader.tell()
                 hash_bytes = self.reader.read_bytes(hash_len)
                 hash_str = hash_bytes.decode("utf-8", errors="replace")
@@ -275,7 +220,7 @@ class KeyringParser:
                         offsets=attr_offsets,
                     )
                 )
-            else:  # int hash
+            else:
                 hash_start = self.reader.tell()
                 hash_int = self.reader.read_u32()
                 hash_end = self.reader.tell()
@@ -296,11 +241,9 @@ class KeyringParser:
         return attrs, attrs_offsets
 
     def _parse_hashed_items(self) -> tuple[list[HashedItem], dict]:
-        """Извлекает hashed items (незашифрованные атрибуты)."""
         items = []
         items_offsets = {}
 
-        # NUM_ITEMS
         num_items_start = self.reader.tell()
         num_items = self.reader.read_u32()
         self._offsets["num_items"] = FieldOffset(num_items_start, self.reader.tell())
@@ -308,22 +251,18 @@ class KeyringParser:
         for idx in range(num_items):
             item_offsets = {}
 
-            # ITEM ID
             id_start = self.reader.tell()
             item_id = self.reader.read_u32()
             item_offsets["id"] = FieldOffset(id_start, self.reader.tell())
 
-            # ITEM TYPE
             type_start = self.reader.tell()
             item_type = self.reader.read_u32()
             item_offsets["type"] = FieldOffset(type_start, self.reader.tell())
 
-            # NUM_ATTRS
             num_attrs_start = self.reader.tell()
             num_attrs = self.reader.read_u32()
             item_offsets["num_attrs"] = FieldOffset(num_attrs_start, self.reader.tell())
 
-            # ATTRIBUTES
             attrs, attrs_offsets = self._parse_hashed_attributes(num_attrs)
             item_offsets["attributes"] = attrs_offsets
 
@@ -341,15 +280,12 @@ class KeyringParser:
         return items, items_offsets
 
     def _parse_encrypted_block(self) -> tuple[bytes, dict]:
-        """Извлекает зашифрованный блок."""
         offsets = {}
 
-        # NUM_ENCRYPTED (размер зашифрованного блока)
         size_start = self.reader.tell()
         encrypted_size = self.reader.read_u32()
         offsets["encrypted_size"] = FieldOffset(size_start, self.reader.tell())
 
-        # Зашифрованные данные
         if encrypted_size > 0:
             data_start = self.reader.tell()
             encrypted_data = self.reader.read_bytes(encrypted_size)
@@ -363,41 +299,30 @@ class KeyringParser:
         return encrypted_data, offsets
 
     def parse_all(self) -> KeyringFile:
-        """
-        Извлекает все данные последовательно и возвращает KeyringFile.
-        """
-        # Блок 1: Сигнатура
         magic = self._parse_magic()
 
-        # Блок 2: Версия и флаги
         ver_major, ver_minor, crypto, hash_type, version_offsets = (
             self._parse_version_block()
         )
         self._offsets.update(version_offsets)
 
-        # Блок 3: Имя + метаданные
         name, name_offsets = self._parse_name()
         self._offsets.update(name_offsets)
 
         ctime, mtime, flags, lock_timeout, meta_offsets = self._parse_metadata()
         self._offsets.update(meta_offsets)
 
-        # Блок 4: KDF параметры
         iterations, salt, reserved, kdf_offsets = self._parse_kdf_params()
         self._offsets.update(kdf_offsets)
 
-        # Блок 5: Hashed items
         hashed_items, items_offsets = self._parse_hashed_items()
         self._offsets["hashed_items"] = items_offsets
 
-        # Блок 6: Зашифрованный блок
         encrypted_data, enc_offsets = self._parse_encrypted_block()
         self._offsets.update(enc_offsets)
 
-        # Сохраняем общий размер файла
         self._offsets["file_end"] = FieldOffset(len(self.data), len(self.data))
 
-        # Создаём объект заголовка
         header = KeyringHeader(
             magic=magic,
             version_major=ver_major,
@@ -415,7 +340,6 @@ class KeyringParser:
             offsets=self._offsets,
         )
 
-        # Создаём итоговый объект
         return KeyringFile(
             filepath=self.filepath,
             file_size=len(self.data),

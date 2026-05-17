@@ -2,7 +2,7 @@ import hashlib
 from Crypto.Cipher import AES
 
 from src.keyring_models import KeyringFile, DecryptedItem, DecryptedAttribute
-from .keyring_parser import BinaryReader
+from src.keyring_parser import BinaryReader
 
 
 def derive_key(password: str, salt: bytes, iterations: int) -> tuple[bytes, bytes]:
@@ -42,10 +42,9 @@ def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
         creation_time = reader.read_time()
         modification_time = reader.read_time()
 
-        _unused_string_field = reader.read_string()
-        _unused_integers = [
-            reader.read_u32() for _ in range(4)
-        ]  # 4 зарезервированных числа
+        reader.read_string()
+        for _ in range(4):
+            reader.read_u32()
 
         attributes_count = reader.read_u32()
         attributes = []

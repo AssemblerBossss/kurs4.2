@@ -3,19 +3,6 @@ from datetime import datetime
 
 MAGIC = b"GnomeKeyring\n\r\x00\n"
 MAGIC_SIZE = 16
-CRYPTO_AES = 0
-CRYPTO_NONE = 1
-CRYPTO_NAMES = {
-    CRYPTO_AES: "AES-128-CBC",
-    CRYPTO_NONE: "NONE (незашифрован)",
-}
-
-HASH_SHA256 = 0
-HASH_NONE = 1
-HASH_NAMES = {
-    HASH_SHA256: "SHA-256 (итерационный KDF)",
-    HASH_NONE: "NONE",
-}
 
 NULL_STRING = 0xFFFFFFFF
 
