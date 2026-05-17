@@ -22,10 +22,6 @@ class DecryptedAttribute:
     type_id: int  # 0 = string, 1 = int
     value: str | int
 
-    @property
-    def type_name(self) -> str:
-        return "string" if self.type_id == 0 else "int"
-
 
 @dataclass
 class DecryptedItem:
