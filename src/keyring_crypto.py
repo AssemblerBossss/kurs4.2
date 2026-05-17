@@ -1,5 +1,5 @@
 import hashlib
-import sys
+from Crypto.Cipher import AES
 
 from src.keyring_models import KeyringFile, DecryptedItem, DecryptedAttribute
 from .keyring_parser import BinaryReader
@@ -12,28 +12,7 @@ def derive_key(password: str, salt: bytes, iterations: int) -> tuple[bytes, byte
     return h[:16], h[16:32]
 
 
-def pkcs7_unpad(data: bytes) -> bytes:
-    if not data:
-        raise ValueError("Пустой блок данных при снятии паддинга")
-
-    pad_len = data[-1]
-
-    if pad_len == 0 or pad_len > 16:
-        raise ValueError(f"Некорректный паддинг: {pad_len} (должен быть 1-16)")
-    if data[-pad_len:] != bytes([pad_len] * pad_len):
-        raise ValueError("PKCS7: паддинг не совпадает")
-
-    return data[:-pad_len]
-
-
 def aes_decrypt(ciphertext: bytes, key: bytes, iv: bytes) -> bytes:
-    try:
-        from Crypto.Cipher import AES
-    except ImportError:
-        raise ImportError(
-            "Не установлен pycryptodome. Установите: pip install pycryptodome"
-        )
-
     cipher = AES.new(key, AES.MODE_CBC, iv)
     return cipher.decrypt(ciphertext)
 
@@ -107,29 +86,24 @@ def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
     return decrypted_items
 
 
-def decrypt_keyring(keyring: KeyringFile, password: str, verbose: bool = False) -> bool:
+def decrypt_keyring(keyring: KeyringFile, password: str) -> bool:
     header = keyring.header
     key, iv = derive_key(password, header.kdf_salt, header.kdf_iterations)
     try:
         raw = aes_decrypt(keyring.encrypted_blob, key, iv)
-    except Exception:
-        keyring.decryption_ok = False
-        return False
-    ok, plaintext = verify_decryption(raw)
-    if not ok:
-        keyring.decryption_ok = False
-        return False
+        ok, plaintext = verify_decryption(raw)
+        if not ok:
+            raise ValueError("Неверный пароль или повреждённые данные")
 
-    try:
         items = parse_decrypted_items(plaintext, len(keyring.hashed_items))
         for i, item in enumerate(items):
             if i < len(keyring.hashed_items):
                 item.item_id = keyring.hashed_items[i].item_id
+
         keyring.decrypted_items = items
         keyring.decryption_ok = True
         return True
-    except Exception as e:
-        if verbose:
-            print(f"[!] parse error: {e}", file=sys.stderr)
+
+    except Exception:
         keyring.decryption_ok = False
         return False

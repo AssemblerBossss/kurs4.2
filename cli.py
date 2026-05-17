@@ -1,10 +1,9 @@
 import argparse
 import sys
-import json
 from src.keyring_parser import KeyringParser
-from src.keyring_visualizer import KeyringVisualizer
 from src.keyring_crypto import decrypt_keyring
 from src.keyring_hash import KeyringHashGenerator
+import getpass
 
 
 def cli() -> None:
@@ -15,13 +14,7 @@ def cli() -> None:
 
     parser.add_argument("file", help="Путь к .keyring файлу")
 
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--header", action="store_true", help="Показать только заголовок (блоки 1-4)"
-    )
-    group.add_argument(
-        "--hashed", action="store_true", help="Показать только hashed items (блок 5)"
-    )
+    group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--decrypt", action="store_true", help="Расшифровать и показать секреты"
     )
@@ -31,62 +24,34 @@ def cli() -> None:
         help="Сгенерировать строку для John the Ripper",
     )
 
-    # Параметры для расшифровки
     parser.add_argument("--password", "-p", help="Мастер-пароль для расшифровки")
-    parser.add_argument(
-        "--json", action="store_true", help="Вывод в формате JSON (только с --decrypt)"
-    )
 
     args = parser.parse_args()
 
-    try:
-        parser_obj = KeyringParser(args.file)
-        keyring = parser_obj.parse_all()
+    if args.password == "-":
+        args.password = getpass.getpass("Master password: ")
 
+    try:
+        keyring = KeyringParser(args.file).parse_all()
     except Exception as e:
         print(f"Ошибка парсинга: {e}", file=sys.stderr)
         sys.exit(1)
 
     if args.john:
-        try:
-            generator = KeyringHashGenerator(keyring)
-            hash_str = generator.generate_john_hash()
-            print(hash_str)
-        except ValueError as e:
-            print(f"Ошибка: {e}", file=sys.stderr)
-            sys.exit(1)
-        return
+        generator = KeyringHashGenerator(keyring)
+        print(generator.generate_john_hash())
 
-    # Режим расшифровки
     if args.decrypt:
         if not args.password:
             print("Для расшифровки укажите --password", file=sys.stderr)
             sys.exit(1)
-        success = decrypt_keyring(keyring, args.password, verbose=args.verbose)
+        success = decrypt_keyring(keyring, args.password)
         if not success:
             print(
                 "Расшифровка не удалась (неверный пароль или повреждён файл)",
                 file=sys.stderr,
             )
             sys.exit(1)
-
-        if args.json:
-            output = []
-            for item in keyring.decrypted_items:
-                output.append(
-                    {
-                        "item_id": item.item_id,
-                        "display_name": item.display_name,
-                        "secret": item.secret,
-                        "ctime": item.ctime_str,
-                        "mtime": item.mtime_str,
-                        "attributes": [
-                            {"name": a.name, "type": a.type_name, "value": a.value}
-                            for a in item.attributes
-                        ],
-                    }
-                )
-            print(json.dumps(output, ensure_ascii=False, indent=2))
         else:
             print(f"\nРасшифровка успешна (пароль: {args.password})\n")
             for item in keyring.decrypted_items:
@@ -100,19 +65,6 @@ def cli() -> None:
                         print(f"    {a.name!r} = {a.value!r}")
                 print()
         return
-
-    # Режим визуализации (полный или частичный)
-    vis = KeyringVisualizer(keyring)
-
-    if args.header:
-        vis.dump_magic()
-        vis.dump_version_and_flags()
-        vis.dump_metadata()
-        vis.dump_kdf_params()
-    elif args.hashed:
-        vis.dump_hashed_items()
-    else:
-        vis.dump_all()
 
 
 if __name__ == "__main__":
