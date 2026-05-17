@@ -1,13 +1,47 @@
 # GNOME Keyring Analyzer
 
-Инструмент для анализа и расшифровки файлов `.keyring` (GNOME Keyring / libsecret).
+Инструмент для анализа, расшифровки и подготовки атаки на файлы `.keyring`
 
 ## Возможности
 
 - Парсинг бинарной структуры файла `.keyring`
-- Визуализация всех блоков: заголовок, hashed items, зашифрованный блок
 - Расшифровка секретов с помощью мастер-пароля
-- Генерация хэша для перебора через **Hashcat** и **John the Ripper**
+- Генерация хеша для атаки через **John the Ripper** (`--format=keyring`)
+
+## Структура файла `.keyring`
+
+Формат файла GNOME Keyring был разработан в 2003 году и с тех пор не претерпевал изменений.
+На момент написания работы актуальные дистрибутивы Linux, включая **Ubuntu 25.04**, по-прежнему используют
+тот же бинарный формат с **GnomeKeyring\n\r\x00\n** в качестве сигнатуры, итерированной **SHA-256** в качестве
+**KDF** и **AES-128-CBC** в качестве симметричного шифра. Реализация **KDF** не соответствует стандарту **PBKDF2**,
+что объясняет отсутствие нативной поддержки данного формата в **Hashca**t. Среди распространённых инструментов
+перебора паролей только **John the Ripper** содержит модуль для атаки на этот формат, причём данный выбор
+инструмента подтверждается рекомендацией самих разработчиков GNOME Keyring в их Security FAQ.
+
+```
+offset  size  field
+──────────────────────────────────────────────────────────────────
+0x0000  16    MAGIC          "GnomeKeyring\n\r\0\n"
+0x0010   1    version_major  должна быть 0
+0x0011   1    version_minor
+0x0012   1    crypto_type    0 = AES-128-CBC
+0x0013   1    hash_type      0 = SHA-256 итерационная
+0x0014  var   name           guint32 длина + UTF-8
+        8     ctime          time_t (2 × guint32 big-endian)
+        8     mtime          time_t (2 × guint32 big-endian)
+        4     flags
+        4     lock_timeout
+        4     kdf_iterations
+        8     kdf_salt
+       16     kdf_reserved   нули
+        4     num_items
+       var    hashed_items[] незашифрованные хеши атрибутов
+        4     encrypted_size
+       var    encrypted_blob AES-128-CBC( MD5(plaintext) || plaintext )
+```
+
+Зашифрованный блок устроен так, что первые 16 байт расшифрованного plaintext — это MD5 от остальных байт. Это и есть механизм проверки правильности пароля: после расшифровки сравнивается `plaintext[:16]` с `MD5(plaintext[16:])`.
+
 
 ## Установка
 
@@ -43,8 +77,8 @@ python cli.py login.keyring --decrypt --password "ваш_пароль"
 python cli.py login.keyring --john
 
 # Сгенерировать хэш для John the Ripper
-python cli.py login.keyring --john --save-hash john.txt
-john --format=gnome-keyring john.txt --wordlist=rockyou.txt
+python cli.py login.keyring --john > john.txt
+john --format=keyring john.txt --wordlist=rockyou.txt
 ```
 
 ## Структура проекта
@@ -53,11 +87,9 @@ john --format=gnome-keyring john.txt --wordlist=rockyou.txt
 .
 ├── cli.py                    # Точка входа, CLI
 └── src/
-    ├── binary_reader.py      # Парсер бинарного потока (big-endian)
     ├── keyring_models.py     # Модели данных (dataclasses)
-    ├── keyring_parser.py     # Парсер структуры .keyring файла
-    ├── keyring_crypto.py     # Криптография: KDF, AES, MD5-верификация
-    ├── keyring_hash.py       # Генератор хэшей для Hashcat и John
+    ├── keyring_parser.py     #  Парсер бинарного потока + Парсер структуры .keyring файла
+    ├── keyring_crypto.py     # Криптография: KDF, AES, MD5-верификация + генератор хеша для John
 ```
 
 ## Где находится файл keyring
@@ -68,4 +100,42 @@ john --format=gnome-keyring john.txt --wordlist=rockyou.txt
 ~/.local/share/keyrings/login.keyring
 ```
 
-Файл `login.keyring` шифруется паролем входа в систему (тем же, что вводится при логине).
+Файл `login.keyring` шифруется паролем входа в систему (когда Gnome Keyring интегрирован в дистрибутив Linux).
+
+## Схема защиты:
+
+```
+┌──────────────────────────────────────────┐
+│ Вход:  master_password, salt (8 B), N    │
+└────────────────┬─────────────────────────┘
+                 │
+                 ▼
+┌──────────────────────────────────────────┐
+│ KDF:                                     │
+│   h₀ = SHA-256(password ‖ salt)          │
+│   hᵢ = SHA-256(hᵢ₋₁),  i = 1 … N−1       │
+│   key = h[0:16],  iv = h[16:32]          │
+└────────────────┬─────────────────────────┘
+                 │
+                 ▼
+┌──────────────────────────────────────────┐
+│ AES-128-CBC-decrypt(ciphertext, key, iv) │
+└────────────────┬─────────────────────────┘
+                 │
+                 ▼
+┌──────────────────────────────────────────┐
+│  plaintext = MD5(16 B) ‖ payload         │
+└────────────────┬─────────────────────────┘
+                 │
+                 ▼
+┌──────────────────────────────────────────┐
+│ Верификация:                             │
+│   MD5(payload) == plaintext[0:16] ?      │
+└────────────────┬─────────────────────────┘
+                 │
+        ┌────────┴────────┐
+        ▼                 ▼
+   совпало:           не совпало:
+   пароль верный,     неверный
+   парсим payload     пароль
+```
