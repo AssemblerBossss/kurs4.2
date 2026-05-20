@@ -80,7 +80,9 @@ class KeyringParser:
                 f"Неподдерживаемая версия формата: {version_major}.{version_minor}"
             )
 
-        # Пропускаем name, ctime, mtime, flags, lock_timeout
+        if crypto_type not in (0, 1):
+            raise ValueError(f"Неизвестный тип шифрования: {crypto_type}")
+
         self.reader.read_string()  # name
         self.reader.read_time()  # ctime
         self.reader.read_time()  # mtime

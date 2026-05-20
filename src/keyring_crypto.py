@@ -42,9 +42,9 @@ def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
         creation_time = reader.read_time()
         modification_time = reader.read_time()
 
-        reader.read_string()  # reserved string
+        reader.read_string()
         for _ in range(4):
-            reader.read_u32()  # 4 reserved integers
+            reader.read_u32()
 
         attributes_count = reader.read_u32()
         attributes = []
@@ -83,26 +83,38 @@ def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
 
 def decrypt_keyring(keyring: KeyringFile, password: str) -> bool:
     header = keyring.header
-    key, iv = derive_key(password, header.kdf_salt, header.kdf_iterations)
-    try:
-        raw = aes_decrypt(keyring.encrypted_blob, key, iv)
-        ok, plaintext = verify_decryption(raw)
-        if not ok:
-            raise ValueError("Неверный пароль или повреждённые данные")
 
+    if header.crypto_type == 1:
+        ok, plaintext = verify_decryption(keyring.encrypted_blob)
+        if not ok:
+            keyring.decryption_ok = False
+            return False
         items = parse_decrypted_items(plaintext, len(keyring.hashed_item_ids))
         for i, item in enumerate(items):
             if i < len(keyring.hashed_item_ids):
                 item.item_id = keyring.hashed_item_ids[i]
-
         keyring.decrypted_items = items
         keyring.decryption_ok = True
         return True
 
-    except Exception:
+    if header.crypto_type != 0:
+        raise ValueError(f"Неподдерживаемый тип шифрования: {header.crypto_type}")
+
+    key, iv = derive_key(password, header.kdf_salt, header.kdf_iterations)
+    raw = aes_decrypt(keyring.encrypted_blob, key, iv)
+    ok, plaintext = verify_decryption(raw)
+    if not ok:
         keyring.decryption_ok = False
         return False
 
+    items = parse_decrypted_items(plaintext, len(keyring.hashed_item_ids))
+    for i, item in enumerate(items):
+        if i < len(keyring.hashed_item_ids):
+            item.item_id = keyring.hashed_item_ids[i]
+
+    keyring.decrypted_items = items
+    keyring.decryption_ok = True
+    return True
 
 
 class KeyringHashGenerator:

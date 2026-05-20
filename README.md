@@ -6,7 +6,7 @@
 
 - Парсинг бинарной структуры файла `.keyring`
 - Расшифровка секретов с помощью мастер-пароля
-- Генерация хеша для атаки через **John the Ripper** (`--format=keyring`)
+- Генерация хеша для атаки через **John the Ripper**
 
 ## Структура файла `.keyring`
 
@@ -14,7 +14,7 @@
 На момент написания работы актуальные дистрибутивы Linux, включая **Ubuntu 25.04**, по-прежнему используют
 тот же бинарный формат с **GnomeKeyring\n\r\x00\n** в качестве сигнатуры, итерированной **SHA-256** в качестве
 **KDF** и **AES-128-CBC** в качестве симметричного шифра. Реализация **KDF** не соответствует стандарту **PBKDF2**,
-что объясняет отсутствие нативной поддержки данного формата в **Hashca**t. Среди распространённых инструментов
+что объясняет отсутствие нативной поддержки данного формата в **Hashcat**. Среди распространённых инструментов
 перебора паролей только **John the Ripper** содержит модуль для атаки на этот формат, причём данный выбор
 инструмента подтверждается рекомендацией самих разработчиков GNOME Keyring в их Security FAQ.
 
@@ -40,67 +40,8 @@ offset  size  field
        var    encrypted_blob AES-128-CBC( MD5(plaintext) || plaintext )
 ```
 
-Зашифрованный блок устроен так, что первые 16 байт расшифрованного plaintext — это MD5 от остальных байт. Это и есть механизм проверки правильности пароля: после расшифровки сравнивается `plaintext[:16]` с `MD5(plaintext[16:])`.
+Зашифрованный блок устроен так, что первые 16 байт расшифрованного plaintext - это MD5 от остальных байт. Это и есть механизм проверки правильности пароля: после расшифровки сравнивается `plaintext[:16]` с `MD5(plaintext[16:])`.
 
-
-## Установка
-
-```bash
-git clone https://github.com/AssemblerBossss/keyring-analyzer
-cd keyring-analyzer
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-## Использование
-
-```bash
-python cli.py <файл.keyring> [опции]
-```
-
-### Опции
-
-| Опция | Описание |
-|---|---|
-| `--decrypt` | Расшифровать и показать секреты |
-| `--password`, `-p` | Мастер-пароль для расшифровки |
-| `--john` | Сгенерировать хэш для John the Ripper |
-
-### Примеры
-
-```bash
-# Расшифровать секреты
-python cli.py login.keyring --decrypt --password "ваш_пароль"
-
-# Сгенерировать хэш для john
-python cli.py login.keyring --john
-
-# Сгенерировать хэш для John the Ripper
-python cli.py login.keyring --john > john.txt
-john --format=keyring john.txt --wordlist=rockyou.txt
-```
-
-## Структура проекта
-
-```
-.
-├── cli.py                    # Точка входа, CLI
-└── src/
-    ├── keyring_models.py     # Модели данных (dataclasses)
-    ├── keyring_parser.py     #  Парсер бинарного потока + Парсер структуры .keyring файла
-    ├── keyring_crypto.py     # Криптография: KDF, AES, MD5-верификация + генератор хеша для John
-```
-
-## Где находится файл keyring
-
-На большинстве систем с GNOME:
-
-```bash
-~/.local/share/keyrings/login.keyring
-```
-
-Файл `login.keyring` шифруется паролем входа в систему (когда Gnome Keyring интегрирован в дистрибутив Linux).
 
 ## Схема защиты:
 
@@ -139,3 +80,86 @@ john --format=keyring john.txt --wordlist=rockyou.txt
    пароль верный,     неверный
    парсим payload     пароль
 ```
+
+## Граничные случаи
+
+| Ситуация                                   | Поведение                                                                       |
+|--------------------------------------------|---------------------------------------------------------------------------------|
+| Пароль содержит Unicode / эмодзи           | Работает корректно: `password.encode("utf8")` полностью поддерживает Unicode    |
+| Пустое хранилище                           | Расшифровка успешна, возвращается пустой список секретов                        |
+| Пустой мастер-пароль                       | Работает: gnome-keyring передаёт пустую строку `""` на KDF                      |
+| Хранилище без шифрования (`crypto_type=1`) | Не поддерживается: инструмент рассчитан только на AES-128-CBC (`crypto_type=0`) |
+
+## Установка
+
+```bash
+git clone https://github.com/AssemblerBossss/keyring-analyzer
+cd keyring-analyzer
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Использование
+
+```bash
+python cli.py <файл.keyring> [опции]
+```
+
+### Опции
+
+| Опция               | Описание                              |
+|---------------------|---------------------------------------|
+| `--decrypt`         | Расшифровать и показать секреты       |
+| `--password`, `-p`  | Мастер-пароль для расшифровки         |
+| `--john`            | Сгенерировать хэш для John the Ripper |
+
+### Примеры
+
+```bash
+python cli.py login.keyring --decrypt --password "ваш_пароль"
+
+python cli.py login.keyring --john > john.txt
+john --format=keyring john.txt --wordlist=rockyou.txt
+```
+
+## Структура проекта
+
+```
+.
+├── cli.py                    # Точка входа
+└── src/
+    ├── keyring_models.py     # Модели данных
+    ├── keyring_parser.py     #  Парсер бинарного потока + Парсер структуры .keyring файла
+    ├── keyring_crypto.py     # Криптография: KDF, AES, MD5-верификация + генератор хеша для John
+```
+
+## Где находится файл keyring
+
+На большинстве систем с GNOME:
+
+```bash
+~/.local/share/keyrings/login.keyring
+```
+
+Файл `login.keyring` шифруется паролем входа в систему (когда Gnome Keyring интегрирован в дистрибутив Linux).
+
+
+## Подробнее про John the Ripper
+Стандартная сборка john ограничивает длину строки хеша
+константой `LINE_BUFFER_SIZE = 0x380 + 320 = 1216` байт. Зашифрованный
+блок реального keyring-файла может занимать куда больше - строка молча отвергается ещё на этапе загрузки.
+
+Решение - и пересборка john с увеличенным
+буфером:
+
+```c
+// src/params.h
+#define LINE_BUFFER_SIZE (0x2000 + PLAINTEXT_BUFFER_SIZE)  // было 0x380
+```
+
+```bash
+cd john-jumbo/src && make -sj$(nproc)
+```
+
+После пересборки john корректно загружает хеш и находит пароль:

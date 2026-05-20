@@ -2,7 +2,6 @@ import argparse
 import sys
 from src.keyring_parser import KeyringParser
 from src.keyring_crypto import decrypt_keyring, KeyringHashGenerator
-import getpass
 
 
 def cli() -> None:
@@ -27,9 +26,6 @@ def cli() -> None:
 
     args = parser.parse_args()
 
-    if args.password == "-":
-        args.password = getpass.getpass("Master password: ")
-
     try:
         keyring = KeyringParser(args.file).parse_all()
     except Exception as e:
@@ -39,6 +35,7 @@ def cli() -> None:
     if args.john:
         generator = KeyringHashGenerator(keyring)
         print(generator.generate_john_hash())
+        return
 
     if args.decrypt:
         if not args.password:
