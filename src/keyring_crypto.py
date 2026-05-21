@@ -84,6 +84,11 @@ def parse_decrypted_items(data: bytes, num_items: int) -> list[DecryptedItem]:
 def decrypt_keyring(keyring: KeyringFile, password: str) -> bool:
     header = keyring.header
 
+    if not keyring.encrypted_blob:
+        keyring.decrypted_items = []
+        keyring.decryption_ok = True
+        return True
+
     if header.crypto_type == 1:
         ok, plaintext = verify_decryption(keyring.encrypted_blob)
         if not ok:

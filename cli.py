@@ -38,7 +38,7 @@ def cli() -> None:
         return
 
     if args.decrypt:
-        if not args.password:
+        if args.password is None:
             print("Для расшифровки укажите --password", file=sys.stderr)
             sys.exit(1)
         success = decrypt_keyring(keyring, args.password)
